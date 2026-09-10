@@ -1,11 +1,14 @@
 openapi: 3.1.0
 info:
   title: DoNext API
-  version: 2.10.0
+  version: 2.11.0
+
 servers:
   - url: https://761a7b89-donext.chiips.workers.dev
+
 security:
   - bearerAuth: []
+
 paths:
   /api/state:
     get:
@@ -24,83 +27,151 @@ paths:
             schema:
               type: object
               properties:
-              program:
-              type: object
-              additionalProperties: true
-              nextWorkout:
-              type: string
-              sessions:
-              type: integer
-              history:
-              type: array
-              items: 
-              type: object
-              additionalProperties: true
+                program:
+                  type: object
+                  additionalProperties: true
+                nextWorkout:
+                  type: string
+                sessions:
+                  type: integer
+                history:
+                  type: array
+                  items:
+                    type: object
+                    additionalProperties: true
               additionalProperties: true
       responses:
         "200":
           description: Saved
+
   /api/history:
     get:
       operationId: getDoNextHistory
       summary: Get training history
       responses:
         "200":
-          description: History
-  /api/next-workout:
+          description: Training history
+
+  /api/workout:
     post:
-      operationId: setNextWorkout
-      summary: Set or replace the next workout
-      description: Use when the user changes an exercise, weight, reps or the next workout. Send the complete workout.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/WorkoutPlan"
-      responses:
-        "200":
-          description: Updated
-  /api/replace-exercise:
-    post:
-      operationId: replaceExercise
-      summary: Replace one exercise in the next workout
+      operationId: saveDoNextWorkout
+      summary: Save completed workout
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [workout, from, to]
               properties:
-                workout: {type: string, enum: [A,B,C]}
-                from: {type: string}
-                to: {$ref: "#/components/schemas/Exercise"}
-                reason: {type: string}
+                id:
+                  type: string
+                workout:
+                  type: string
+                date:
+                  type: string
+                sessionComment:
+                  type: string
+                exercises:
+                  type: array
+                  items:
+                    type: object
+                    additionalProperties: true
+                enteredAfterward:
+                  type: boolean
+              additionalProperties: true
       responses:
         "200":
-          description: Updated
+          description: Workout saved
+
+  /api/next-workout:
+    post:
+      operationId: setNextWorkout
+      summary: Send or replace the next workout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - workout
+                - exercises
+              properties:
+                workout:
+                  type: string
+                  enum:
+                    - A
+                    - B
+                    - C
+                exercises:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      exercise:
+                        type: string
+                      weight:
+                        type: number
+                      unit:
+                        type: string
+                      sets:
+                        type: integer
+                      targetRange:
+                        type: string
+                    additionalProperties: true
+                reason:
+                  type: string
+              additionalProperties: true
+      responses:
+        "200":
+          description: Next workout saved
+
+  /api/replace-exercise:
+    post:
+      operationId: replaceExercise
+      summary: Replace one exercise in a workout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - workout
+                - from
+                - to
+              properties:
+                workout:
+                  type: string
+                  enum:
+                    - A
+                    - B
+                    - C
+                from:
+                  type: string
+                to:
+                  type: object
+                  properties:
+                    exercise:
+                      type: string
+                    weight:
+                      type: number
+                    unit:
+                      type: string
+                    sets:
+                      type: integer
+                    targetRange:
+                      type: string
+                  additionalProperties: true
+                reason:
+                  type: string
+              additionalProperties: true
+      responses:
+        "200":
+          description: Exercise replaced
+
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
-  schemas:
-    Exercise:
-      type: object
-      required: [exercise, weight, unit, sets, targetRange]
-      properties:
-        exercise: {type: string}
-        weight: {type: number}
-        unit: {type: string}
-        sets: {type: integer}
-        targetRange: {type: string}
-    WorkoutPlan:
-      type: object
-      required: [workout, exercises]
-      properties:
-        workout: {type: string, enum: [A,B,C]}
-        exercises:
-          type: array
-          items: {$ref: "#/components/schemas/Exercise"}
-        reason: {type: string}
