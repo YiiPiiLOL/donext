@@ -3,7 +3,7 @@ info:
   title: DoNext API
   version: 2.10.0
 servers:
-  - url: https://YOUR-DONEXT-WORKER.workers.dev
+  - url: https://761a7b89-donext.chiips.workers.dev
 security:
   - bearerAuth: []
 paths:
