@@ -119,7 +119,7 @@ textarea{text-align:left;margin-top:9px;resize:vertical}
     <div class="card">
       <h2 class="section-title">INSTÄLLNINGAR</h2>
       <div class="setting"><div><strong>Språk</strong></div><span>Svenska</span></div>
-      <div class="setting"><div><strong>Appversion</strong></div><span>V2.10</span></div>
+      <div class="setting"><div><strong>Appversion</strong></div><span>V2.11</span></div>
       <div class="setting"><div><strong>Träningsdata</strong></div><button class="badge" onclick="exportTrainingData()">Exportera</button></div>
       <div class="setting" style="display:block">
         <strong>ChatGPT ↔ DoNext</strong>
@@ -156,7 +156,7 @@ textarea{text-align:left;margin-top:9px;resize:vertical}
 </nav>
 
 <script>
-const APP_VERSION="2.10-chat-api";
+const APP_VERSION="2.11-offline-sync";
 const STORAGE_KEY="donextV2";
 const API_URL_KEY="donextApiUrl";
 const API_TOKEN_KEY="donextApiToken";
@@ -194,9 +194,10 @@ const DEFAULT_PROGRAM={
  ]
 };
 
-const DEFAULT_STATE={schemaVersion:2,next:"A",sessions:0,history:[],program:DEFAULT_PROGRAM};
+const DEFAULT_STATE={schemaVersion:2,next:"A",sessions:0,history:[],program:DEFAULT_PROGRAM,pendingSync:[]};
 let state=loadState(), current=state.next;
 let syncTimer=null;
+let syncBusy=false;
 
 function clone(x){return structuredClone(x)}
 function loadState(){
@@ -207,7 +208,8 @@ function loadState(){
    ...clone(DEFAULT_STATE),
    ...s,
    program:{...clone(DEFAULT_PROGRAM),...(s.program||{})},
-   history:Array.isArray(s.history)?s.history:[]
+   history:Array.isArray(s.history)?s.history:[],
+   pendingSync:Array.isArray(s.pendingSync)?s.pendingSync:[]
   };
  }catch(e){return clone(DEFAULT_STATE)}
 }
@@ -228,40 +230,112 @@ async function apiFetch(path,options={}){
  if(!res.ok)throw new Error((await res.text())||("HTTP "+res.status));
  return res.json();
 }
+function mergeHistory(localHistory,remoteHistory){
+ const map=new Map();
+ for(const item of (remoteHistory||[]))if(item?.id)map.set(item.id,item);
+ for(const item of (localHistory||[]))if(item?.id)map.set(item.id,item);
+ return [...map.values()].sort((a,b)=>new Date(a.date)-new Date(b.date));
+}
 async function pullRemote(){
  if(!apiToken()){setSyncStatus("Inte ansluten");return false}
+ if(syncBusy)return false;
+ syncBusy=true;
  try{
   setSyncStatus("Synkar…");
   const remote=await apiFetch("/api/state");
-  if(remote?.program)state.program={...clone(DEFAULT_PROGRAM),...remote.program};
-  if(Array.isArray(remote?.history))state.history=remote.history;
-  if(Number.isFinite(remote?.sessions))state.sessions=remote.sessions;
-  if(remote?.nextWorkout)state.next=remote.nextWorkout;
+  const pendingIds=new Set((state.pendingSync||[]).map(x=>x.id));
+  const remoteHistory=Array.isArray(remote?.history)?remote.history:[];
+  state.history=mergeHistory(state.history,remoteHistory);
+
+  // Merge each workout slot independently. Never replace a populated local slot
+  // with an empty server slot (the API may legitimately return only a partially
+  // configured program during setup).
+  if(remote?.program&&pendingIds.size===0){
+   const mergedProgram={...clone(DEFAULT_PROGRAM),...state.program};
+   for(const w of ["A","B","C"]){
+    if(Array.isArray(remote.program[w])&&remote.program[w].length>0)mergedProgram[w]=remote.program[w];
+   }
+   state.program=mergedProgram;
+  }
+
+  // Local progress must win while workouts are waiting to sync.
+  if(pendingIds.size===0){
+   if(Number.isFinite(remote?.sessions))state.sessions=Math.max(Number(state.sessions||0),Number(remote.sessions));
+   if(remote?.nextWorkout)state.next=remote.nextWorkout;
+  }
+
   saveState();
   current=state.next;
   render();
+
+  // Upload locally queued workouts before considering the device fully synced.
+  const uploaded=await syncPendingWorkouts();
+  if(uploaded && (state.pendingSync||[]).length===0){
+   // Pull once more so the device reflects the confirmed server state.
+   const confirmed=await apiFetch("/api/state");
+   state.history=mergeHistory(state.history,Array.isArray(confirmed?.history)?confirmed.history:[]);
+   if(confirmed?.program){
+    const mergedProgram={...clone(DEFAULT_PROGRAM),...state.program};
+    for(const w of ["A","B","C"]){
+     if(Array.isArray(confirmed.program[w])&&confirmed.program[w].length>0)mergedProgram[w]=confirmed.program[w];
+    }
+    state.program=mergedProgram;
+   }
+   if(Number.isFinite(confirmed?.sessions))state.sessions=Math.max(Number(state.sessions||0),Number(confirmed.sessions));
+   if(confirmed?.nextWorkout)state.next=confirmed.nextWorkout;
+   current=state.next;
+   saveState();
+   render();
+  }
+  if((state.pendingSync||[]).length){setSyncStatus("Lokal data · väntar på synkning");return false}
   setSyncStatus("Synkad ✓",true);
   return true;
  }catch(e){
-  setSyncStatus("Lokal data (API ej nåbar)");
+  setSyncStatus((state.pendingSync||[]).length?"Lokal data · väntar på synkning":"Lokal data (API ej nåbar)");
   return false;
+ }finally{syncBusy=false}
+}
+async function syncPendingWorkouts(){
+ if(!apiToken()||(state.pendingSync||[]).length===0)return false;
+ let uploadedAny=false;
+ const queue=[...state.pendingSync];
+ for(const session of queue){
+  try{
+   await apiFetch("/api/workout",{method:"POST",body:JSON.stringify(session)});
+   state.pendingSync=state.pendingSync.filter(x=>x.id!==session.id);
+   saveState();
+   uploadedAny=true;
+  }catch(e){
+   break;
+  }
  }
+ return uploadedAny;
 }
 async function pushRemoteState(){
- if(!apiToken())return;
+ // Kept for compatibility with V2.10; state-changing workout data uses the
+ // idempotent /api/workout queue instead of replacing the entire remote state.
+ if(!apiToken())return false;
  try{
   setSyncStatus("Sparar…");
   await apiFetch("/api/state",{method:"PUT",body:JSON.stringify({
    program:state.program,nextWorkout:state.next,sessions:state.sessions,history:state.history
   })});
   setSyncStatus("Synkad ✓",true);
- }catch(e){setSyncStatus("Sparat lokalt – API ej nåbar")}
+  return true;
+ }catch(e){setSyncStatus("Sparat lokalt – API ej nåbar");return false}
 }
 async function sendWorkoutToRemote(session){
- if(!apiToken())return;
+ if(!apiToken())return false;
  try{
   await apiFetch("/api/workout",{method:"POST",body:JSON.stringify(session)});
- }catch(e){setSyncStatus("Pass sparat lokalt – API ej nåbar")}
+  state.pendingSync=state.pendingSync.filter(x=>x.id!==session.id);
+  saveState();
+  return true;
+ }catch(e){return false}
+}
+function queueWorkout(session){
+ if(!state.pendingSync.some(x=>x.id===session.id))state.pendingSync.push(session);
+ saveState();
 }
 function exerciseId(name){return name.trim().toLowerCase()}
 function previousFor(name){
@@ -333,12 +407,14 @@ async function saveWorkout(){
  state.history.push(session);
  state.sessions++;
  state.next=current==="A"?"B":current==="B"?"C":"A";
- saveState();
- await sendWorkoutToRemote(session);
+ queueWorkout(session);
  current=state.next;
  render();
  showView("today",document.querySelector('[data-view="today"]'));
- alert("Pass sparat!");
+ const synced=await sendWorkoutToRemote(session);
+ if(synced)setSyncStatus("Synkad ✓",true);
+ else setSyncStatus("Sparat lokalt – väntar på synkning");
+ alert(synced?"Pass sparat och synkat!":"Pass sparat lokalt – synkas när anslutningen är tillbaka.");
 }
 function showView(id,btn){
  document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
@@ -352,7 +428,8 @@ function renderHistory(){
  const list=[...state.history].sort((a,b)=>new Date(b.date)-new Date(a.date));
  document.getElementById("historyList").innerHTML=list.length?list.map(s=>{
   const totalSets=s.exercises.reduce((n,e)=>n+(e.setsCompleted||e.reps?.length||0),0);
-  return `<div class="history-row"><strong>Pass ${esc(s.workout)} · ${new Date(s.date).toLocaleDateString("sv-SE")}</strong><small>${s.exercises.length} övningar · ${totalSets} set${s.enteredAfterward?" · efterregistrerat":""}</small>${s.sessionComment?`<small>${esc(s.sessionComment)}</small>`:""}</div>`;
+  const pending=(state.pendingSync||[]).some(x=>x.id===s.id);
+  return `<div class="history-row"><strong>Pass ${esc(s.workout)} · ${new Date(s.date).toLocaleDateString("sv-SE")}</strong><small>${s.exercises.length} övningar · ${totalSets} set${s.enteredAfterward?" · efterregistrerat":""}${pending?" · väntar på synkning":""}</small>${s.sessionComment?`<small>${esc(s.sessionComment)}</small>`:""}</div>`;
  }).join(""):"<div class='empty'>Ingen träning registrerad ännu.</div>";
 }
 function updateStats(){
@@ -406,11 +483,13 @@ async function savePastWorkout(){
  const session={id:(crypto.randomUUID?crypto.randomUUID():String(Date.now())),date:iso,workout,sessionComment:document.getElementById("pastNote").value.trim(),exercises,enteredAfterward:true};
  state.history.push(session);
  state.history.sort((a,b)=>new Date(a.date)-new Date(b.date));
- saveState();
+ queueWorkout(session);
  await sendWorkoutToRemote(session);
  document.getElementById("pastWorkoutForm").classList.add("hidden");
  document.getElementById("pastNote").value="";
- render();renderHistory();updateStats();alert("Historiskt pass sparat!");
+ render();renderHistory();updateStats();
+ setSyncStatus((state.pendingSync||[]).length?"Sparat lokalt – väntar på synkning":"Synkad ✓",!(state.pendingSync||[]).length);
+ alert((state.pendingSync||[]).some(x=>x.id===session.id)?"Historiskt pass sparat lokalt – synkas när anslutningen är tillbaka.":"Historiskt pass sparat och synkat!");
 }
 function exportTrainingData(){
  const payload={schemaVersion:2,appVersion:APP_VERSION,exportedAt:new Date().toISOString(),nextWorkout:state.next,sessions:state.sessions,program:state.program,history:state.history};
@@ -419,13 +498,17 @@ function exportTrainingData(){
  a.href=url;a.download="donext-training-data.json";a.click();URL.revokeObjectURL(url);
 }
 function saveApiSettings(){
- const url=document.getElementById("apiUrl").value.trim().replace(/\/+$/,"");
+ const url=document.getElementById("apiUrl").value.trim().replace(/\/+$/ ,"");
  const token=document.getElementById("apiToken").value.trim();
  if(url)localStorage.setItem(API_URL_KEY,url);else localStorage.removeItem(API_URL_KEY);
  if(token)localStorage.setItem(API_TOKEN_KEY,token);else localStorage.removeItem(API_TOKEN_KEY);
  setSyncStatus(token?"Ansluten – tryck Synka":"Inte ansluten");
+ if(token){pullRemote()}
 }
-async function syncNow(){await pullRemote()}
+async function syncNow(){
+ await pullRemote();
+ renderHistory();
+}
 function loadApiSettingsUI(){
  document.getElementById("apiUrl").value=localStorage.getItem(API_URL_KEY)||location.origin;
  document.getElementById("apiToken").value=localStorage.getItem(API_TOKEN_KEY)||"";
@@ -438,6 +521,7 @@ if(apiToken()){
  pullRemote();
  syncTimer=setInterval(pullRemote,15000);
 }
+window.addEventListener("online",()=>{if(apiToken())pullRemote()});
 </script>
 </body>
 </html>
