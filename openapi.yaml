@@ -32,7 +32,7 @@ paths:
               sessions:
               type: integer
               history:
-              tyoe: array
+              type: array
               items: 
               type: object
               additionalProperties: true
