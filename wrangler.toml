@@ -8,4 +8,4 @@ binding = "ASSETS"
 
 [[kv_namespaces]]
 binding = "DONEXT_KV"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
+id = "0cb1de994dd6458d8887cac2225d9222"
