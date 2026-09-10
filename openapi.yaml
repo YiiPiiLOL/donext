@@ -1,29 +1,19 @@
 openapi: 3.1.0
-
 info:
   title: DoNext API
-  version: 2.12.0
-
+  version: 2.10.0
 servers:
-  - url: https://761a7b89-donext.chiips.workers.dev
-
+  - url: https://YOUR-DONEXT-WORKER.workers.dev
 security:
   - bearerAuth: []
-
 paths:
-
   /api/state:
     get:
       operationId: getDoNextState
-      summary: Get current DoNext state
+      summary: Get DoNext program and history
       responses:
         "200":
-          description: Current DoNext state
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/State"
-
+          description: Current state
     put:
       operationId: replaceDoNextState
       summary: Replace DoNext state
@@ -32,252 +22,71 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/StateUpdate"
+              type: object
       responses:
         "200":
-          description: State saved
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/State"
-
+          description: Saved
   /api/history:
     get:
       operationId: getDoNextHistory
       summary: Get training history
       responses:
         "200":
-          description: Training history
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  history:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/Workout"
-                required:
-                  - history
-
-  /api/workout:
-    post:
-      operationId: saveDoNextWorkout
-      summary: Save a completed workout
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/Workout"
-      responses:
-        "200":
-          description: Workout saved
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/State"
-
+          description: History
   /api/next-workout:
     post:
       operationId: setNextWorkout
-      summary: Set the next workout
+      summary: Set or replace the next workout
+      description: Use when the user changes an exercise, weight, reps or the next workout. Send the complete workout.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/NextWorkoutRequest"
+              $ref: "#/components/schemas/WorkoutPlan"
       responses:
         "200":
-          description: Next workout saved
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/State"
-
+          description: Updated
   /api/replace-exercise:
     post:
       operationId: replaceExercise
-      summary: Replace an exercise in a workout
+      summary: Replace one exercise in the next workout
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ReplaceExerciseRequest"
+              type: object
+              required: [workout, from, to]
+              properties:
+                workout: {type: string, enum: [A,B,C]}
+                from: {type: string}
+                to: {$ref: "#/components/schemas/Exercise"}
+                reason: {type: string}
       responses:
         "200":
-          description: Exercise replaced
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/State"
-
+          description: Updated
 components:
-
   securitySchemes:
-
     bearerAuth:
       type: http
       scheme: bearer
-
   schemas:
-
     Exercise:
       type: object
+      required: [exercise, weight, unit, sets, targetRange]
       properties:
-        exercise:
-          type: string
-        weight:
-          type: number
-        unit:
-          type: string
-        sets:
-          type: integer
-        targetRange:
-          type: string
-      required:
-        - exercise
-        - weight
-        - unit
-        - sets
-        - targetRange
-
-    Workout:
+        exercise: {type: string}
+        weight: {type: number}
+        unit: {type: string}
+        sets: {type: integer}
+        targetRange: {type: string}
+    WorkoutPlan:
       type: object
+      required: [workout, exercises]
       properties:
-        id:
-          type: string
-        workout:
-          type: string
-        date:
-          type: string
-        sessionComment:
-          type: string
+        workout: {type: string, enum: [A,B,C]}
         exercises:
           type: array
-          items:
-            type: object
-            properties:
-              exercise:
-                type: string
-              weight:
-                type: number
-              unit:
-                type: string
-              sets:
-                type: integer
-              reps:
-                type: integer
-              targetRange:
-                type: string
-              comment:
-                type: string
-              pain:
-                type: string
-              rpe:
-                type: number
-            required:
-              - exercise
-        enteredAfterward:
-          type: boolean
-
-    State:
-      type: object
-      properties:
-        schemaVersion:
-          type: integer
-        nextWorkout:
-          type: string
-        sessions:
-          type: integer
-        program:
-          type: object
-          properties:
-            A:
-              type: array
-              items:
-                $ref: "#/components/schemas/Exercise"
-            B:
-              type: array
-              items:
-                $ref: "#/components/schemas/Exercise"
-            C:
-              type: array
-              items:
-                $ref: "#/components/schemas/Exercise"
-          required:
-            - A
-            - B
-            - C
-        history:
-          type: array
-          items:
-            $ref: "#/components/schemas/Workout"
-
-    StateUpdate:
-      type: object
-      properties:
-        program:
-          type: object
-          properties:
-            A:
-              type: array
-              items:
-                $ref: "#/components/schemas/Exercise"
-            B:
-              type: array
-              items:
-                $ref: "#/components/schemas/Exercise"
-            C:
-              type: array
-              items:
-                $ref: "#/components/schemas/Exercise"
-        nextWorkout:
-          type: string
-        sessions:
-          type: integer
-        history:
-          type: array
-          items:
-            $ref: "#/components/schemas/Workout"
-
-    NextWorkoutRequest:
-      type: object
-      properties:
-        workout:
-          type: string
-          enum:
-            - A
-            - B
-            - C
-        exercises:
-          type: array
-          items:
-            $ref: "#/components/schemas/Exercise"
-        reason:
-          type: string
-      required:
-        - workout
-        - exercises
-
-    ReplaceExerciseRequest:
-      type: object
-      properties:
-        workout:
-          type: string
-          enum:
-            - A
-            - B
-            - C
-        from:
-          type: string
-        to:
-          $ref: "#/components/schemas/Exercise"
-        reason:
-          type: string
-      required:
-        - workout
-        - from
-        - to
+          items: {$ref: "#/components/schemas/Exercise"}
+        reason: {type: string}
