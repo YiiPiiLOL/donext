@@ -1,0 +1,295 @@
+openapi: 3.1.0
+info:
+  title: DoNext API
+  version: 2.11.1
+  description: API for the DoNext training app and ChatGPT coach.
+servers:
+  - url: https://donext.chiips.workers.dev
+security:
+  - bearerAuth: []
+paths:
+  /api/state:
+    get:
+      operationId: getDoNextState
+      summary: Get current DoNext state
+      responses:
+        "200":
+          description: Current state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/State"
+        "401":
+          description: Unauthorized
+    put:
+      operationId: replaceDoNextState
+      summary: Replace DoNext state
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StateUpdate"
+      responses:
+        "200":
+          description: Saved state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/State"
+        "401":
+          description: Unauthorized
+  /api/history:
+    get:
+      operationId: getDoNextHistory
+      summary: Get DoNext training history
+      responses:
+        "200":
+          description: Training history
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [history]
+                properties:
+                  history:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/WorkoutSession"
+        "401":
+          description: Unauthorized
+  /api/workout:
+    post:
+      operationId: saveDoNextWorkout
+      summary: Save a completed workout
+      description: Save a completed workout to DoNext. The session id is used for idempotent retries.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkoutSession"
+      responses:
+        "200":
+          description: Workout saved and current state returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/State"
+        "401":
+          description: Unauthorized
+  /api/next-workout:
+    post:
+      operationId: setNextWorkout
+      summary: Set or replace the next workout
+      description: Send the complete workout that should be shown next in DoNext.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NextWorkoutRequest"
+      responses:
+        "200":
+          description: Updated state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/State"
+        "400":
+          description: Invalid workout payload
+        "401":
+          description: Unauthorized
+  /api/replace-exercise:
+    post:
+      operationId: replaceExercise
+      summary: Replace one exercise in a workout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReplaceExerciseRequest"
+      responses:
+        "200":
+          description: Updated state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/State"
+        "400":
+          description: Invalid request
+        "404":
+          description: Exercise not found
+        "401":
+          description: Unauthorized
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    ExerciseInput:
+      type: object
+      required: [exercise, weight, unit, sets, targetRange]
+      properties:
+        exercise:
+          type: string
+        weight:
+          type: number
+        unit:
+          type: string
+        sets:
+          type: integer
+          minimum: 1
+        targetRange:
+          type: string
+        range:
+          type: string
+        baseWeight:
+          type: number
+    StoredExercise:
+      type: array
+      description: Stored DoNext exercise tuple [exercise, weight, unit, sets, targetRange].
+      items: {}
+      minItems: 5
+      maxItems: 5
+    WorkoutSessionExercise:
+      type: object
+      required: [exerciseId, exercise, weight, unit, reps, setsCompleted, targetRange]
+      properties:
+        exerciseId:
+          type: string
+        exercise:
+          type: string
+        weight:
+          type: number
+        unit:
+          type: string
+        reps:
+          type: array
+          items:
+            type: number
+            minimum: 1
+        setsCompleted:
+          type: integer
+          minimum: 1
+        targetRange:
+          type: string
+        comment:
+          type: string
+    WorkoutSession:
+      type: object
+      required: [id, date, workout, exercises]
+      properties:
+        id:
+          type: string
+        date:
+          type: string
+        workout:
+          type: string
+          enum: [A, B, C]
+        sessionComment:
+          type: string
+        enteredAfterward:
+          type: boolean
+        exercises:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkoutSessionExercise"
+    State:
+      type: object
+      required: [schemaVersion, nextWorkout, sessions, program, history]
+      properties:
+        schemaVersion:
+          type: integer
+        nextWorkout:
+          type: string
+          enum: [A, B, C]
+        sessions:
+          type: integer
+          minimum: 0
+        program:
+          type: object
+          properties:
+            A:
+              type: array
+              items:
+                $ref: "#/components/schemas/StoredExercise"
+            B:
+              type: array
+              items:
+                $ref: "#/components/schemas/StoredExercise"
+            C:
+              type: array
+              items:
+                $ref: "#/components/schemas/StoredExercise"
+        history:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkoutSession"
+        lastPlanUpdate:
+          type: object
+          properties:
+            at:
+              type: string
+            source:
+              type: string
+            reason:
+              type: string
+    StateUpdate:
+      type: object
+      properties:
+        schemaVersion:
+          type: integer
+        nextWorkout:
+          type: string
+          enum: [A, B, C]
+        sessions:
+          type: integer
+          minimum: 0
+        program:
+          type: object
+          properties:
+            A:
+              type: array
+              items:
+                $ref: "#/components/schemas/ExerciseInput"
+            B:
+              type: array
+              items:
+                $ref: "#/components/schemas/ExerciseInput"
+            C:
+              type: array
+              items:
+                $ref: "#/components/schemas/ExerciseInput"
+        history:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkoutSession"
+    NextWorkoutRequest:
+      type: object
+      required: [workout, exercises]
+      properties:
+        workout:
+          type: string
+          enum: [A, B, C]
+        exercises:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExerciseInput"
+        reason:
+          type: string
+    ReplaceExerciseRequest:
+      type: object
+      required: [workout, from, to]
+      properties:
+        workout:
+          type: string
+          enum: [A, B, C]
+        from:
+          type: string
+        to:
+          $ref: "#/components/schemas/ExerciseInput"
+        reason:
+          type: string
