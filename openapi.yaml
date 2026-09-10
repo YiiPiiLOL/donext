@@ -23,6 +23,20 @@ paths:
           application/json:
             schema:
               type: object
+              properties:
+              program:
+              type: object
+              additionalProperties: true
+              nextWorkout:
+              type: string
+              sessions:
+              type: integer
+              history:
+              tyoe: array
+              items: 
+              type: object
+              additionalProperties: true
+              additionalProperties: true
       responses:
         "200":
           description: Saved
