@@ -1,0 +1,92 @@
+openapi: 3.1.0
+info:
+  title: DoNext API
+  version: 2.10.0
+servers:
+  - url: https://YOUR-DONEXT-WORKER.workers.dev
+security:
+  - bearerAuth: []
+paths:
+  /api/state:
+    get:
+      operationId: getDoNextState
+      summary: Get DoNext program and history
+      responses:
+        "200":
+          description: Current state
+    put:
+      operationId: replaceDoNextState
+      summary: Replace DoNext state
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Saved
+  /api/history:
+    get:
+      operationId: getDoNextHistory
+      summary: Get training history
+      responses:
+        "200":
+          description: History
+  /api/next-workout:
+    post:
+      operationId: setNextWorkout
+      summary: Set or replace the next workout
+      description: Use when the user changes an exercise, weight, reps or the next workout. Send the complete workout.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkoutPlan"
+      responses:
+        "200":
+          description: Updated
+  /api/replace-exercise:
+    post:
+      operationId: replaceExercise
+      summary: Replace one exercise in the next workout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [workout, from, to]
+              properties:
+                workout: {type: string, enum: [A,B,C]}
+                from: {type: string}
+                to: {$ref: "#/components/schemas/Exercise"}
+                reason: {type: string}
+      responses:
+        "200":
+          description: Updated
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    Exercise:
+      type: object
+      required: [exercise, weight, unit, sets, targetRange]
+      properties:
+        exercise: {type: string}
+        weight: {type: number}
+        unit: {type: string}
+        sets: {type: integer}
+        targetRange: {type: string}
+    WorkoutPlan:
+      type: object
+      required: [workout, exercises]
+      properties:
+        workout: {type: string, enum: [A,B,C]}
+        exercises:
+          type: array
+          items: {$ref: "#/components/schemas/Exercise"}
+        reason: {type: string}
