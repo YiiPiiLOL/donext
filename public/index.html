@@ -119,7 +119,7 @@ textarea{text-align:left;margin-top:9px;resize:vertical}
     <div class="card">
       <h2 class="section-title">INSTÄLLNINGAR</h2>
       <div class="setting"><div><strong>Språk</strong></div><span>Svenska</span></div>
-      <div class="setting"><div><strong>Appversion</strong></div><span>V2.11.1</span></div>
+      <div class="setting"><div><strong>Appversion</strong></div><span>V2.11.2</span></div>
       <div class="setting"><div><strong>Träningsdata</strong></div><button class="badge" onclick="exportTrainingData()">Exportera</button></div>
       <div class="setting" style="display:block">
         <strong>ChatGPT ↔ DoNext</strong>
@@ -156,10 +156,11 @@ textarea{text-align:left;margin-top:9px;resize:vertical}
 </nav>
 
 <script>
-const APP_VERSION="2.11.1-offline-sync-fix";
+const APP_VERSION="2.11.2-event-sync";
 const STORAGE_KEY="donextV2";
 const API_URL_KEY="donextApiUrl";
 const API_TOKEN_KEY="donextApiToken";
+const DRAFT_KEY="donextWorkoutDraft";
 
 const DEFAULT_PROGRAM={
  A:[
@@ -196,8 +197,12 @@ const DEFAULT_PROGRAM={
 
 const DEFAULT_STATE={schemaVersion:2,next:"A",sessions:0,history:[],program:DEFAULT_PROGRAM,pendingSync:[]};
 let state=loadState(), current=state.next;
-let syncTimer=null;
 let syncBusy=false;
+let workoutDirty=false;
+try{
+ const draft=JSON.parse(localStorage.getItem(DRAFT_KEY)||"null");
+ if(draft?.workout&&["A","B","C"].includes(draft.workout))current=draft.workout;
+}catch(e){}
 
 function clone(x){return structuredClone(x)}
 function loadState(){
@@ -277,8 +282,10 @@ async function pullRemote(){
   }
 
   saveState();
-  current=state.next;
-  render();
+  if(!workoutDirty){
+   current=state.next;
+   render();
+  }
 
   // Upload locally queued workouts before considering the device fully synced.
   const uploaded=await syncPendingWorkouts();
@@ -295,9 +302,13 @@ async function pullRemote(){
    }
    if(Number.isFinite(confirmed?.sessions))state.sessions=Math.max(Number(state.sessions||0),Number(confirmed.sessions));
    if(confirmed?.nextWorkout)state.next=confirmed.nextWorkout;
-   current=state.next;
-   saveState();
-   render();
+   if(!workoutDirty){
+    current=state.next;
+    saveState();
+    render();
+   }else{
+    saveState();
+   }
   }
   if((state.pendingSync||[]).length){setSyncStatus("Lokal data · väntar på synkning");return false}
   setSyncStatus("Synkad ✓",true);
@@ -387,7 +398,7 @@ function render(){
    <input id="w-${i}" placeholder="Kommentar / obehag (valfritt)">
   </div>`;
  }).join("");
- updateBar(); updateStats();
+ restoreDraft(); updateBar(); updateStats();
 }
 function updateBar(){
  const total=(state.program[current]||[]).length;
@@ -397,10 +408,30 @@ function updateBar(){
  document.getElementById("bar").style.width=pct+"%";
  document.getElementById("percent").textContent=pct+"%";
 }
-document.addEventListener("input",e=>{if(e.target.closest("#workout"))updateBar()});
+document.addEventListener("input",e=>{if(e.target.closest("#workout")){workoutDirty=true;saveDraft();updateBar()}});
+function saveDraft(){
+ const values={};
+ document.querySelectorAll("#workout input[id^=\"r-\"],#workout input[id^=\"w-\"]").forEach(x=>{if(x.value!=="")values[x.id]=x.value});
+ const note=document.getElementById("sessionNote")?.value||"";
+ if(!Object.keys(values).length&&!note){localStorage.removeItem(DRAFT_KEY);return}
+ localStorage.setItem(DRAFT_KEY,JSON.stringify({workout:current,values,note,savedAt:new Date().toISOString()}));
+}
+function restoreDraft(){
+ try{
+  const draft=JSON.parse(localStorage.getItem(DRAFT_KEY)||"null");
+  if(!draft||draft.workout!==current)return;
+  Object.entries(draft.values||{}).forEach(([id,value])=>{const el=document.getElementById(id);if(el)el.value=value});
+  const note=document.getElementById("sessionNote");
+  if(note&&draft.note)note.value=draft.note;
+  if(Object.keys(draft.values||{}).length||draft.note)workoutDirty=true;
+ }catch(e){}
+}
+function clearDraft(){localStorage.removeItem(DRAFT_KEY)}
 function clearInputs(){
  document.querySelectorAll("#workout input").forEach(x=>x.value="");
  document.getElementById("sessionNote").value="";
+ clearDraft();
+ workoutDirty=false;
  updateBar();
 }
 async function saveWorkout(){
@@ -420,6 +451,8 @@ async function saveWorkout(){
  state.sessions++;
  state.next=current==="A"?"B":current==="B"?"C":"A";
  queueWorkout(session);
+ clearDraft();
+ workoutDirty=false;
  current=state.next;
  render();
  showView("today",document.querySelector('[data-view="today"]'));
@@ -529,10 +562,7 @@ function loadApiSettingsUI(){
 render();
 loadApiSettingsUI();
 if("serviceWorker" in navigator)navigator.serviceWorker.register("./sw.js",{updateViaCache:"none"}).catch(()=>{});
-if(apiToken()){
- pullRemote();
- syncTimer=setInterval(pullRemote,15000);
-}
+if(apiToken())pullRemote();
 window.addEventListener("online",()=>{if(apiToken())pullRemote()});
 </script>
 </body>
