@@ -1,8 +1,0 @@
-{
-  "name":"donext-app",
-  "version":"2.11.7",
-  "private":true,
-  "scripts":{"sync:android":"npx cap sync android","open:android":"npx cap open android","build:android":"npx cap sync android && cd android && ./gradlew assembleDebug"},
-  "dependencies":{"@capacitor/core":"^7.4.3","@capacitor/android":"^7.4.3"},
-  "devDependencies":{"@capacitor/cli":"^7.4.3"}
-}
