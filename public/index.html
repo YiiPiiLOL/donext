@@ -28,8 +28,7 @@ main{max-width:980px;margin:0 auto;padding:14px 16px 24px}
 h1,h2,h3,p{margin:0}.hero h1{font-size:30px;letter-spacing:-.7px}.date{font-size:16px;color:var(--muted);margin-top:2px;font-weight:600}
 .badge{background:#eef0f2;border-radius:999px;padding:7px 11px;font-size:13px;font-weight:800;white-space:nowrap}
 .progress-wrap{display:flex;align-items:center;gap:10px;margin-top:14px}.progress{height:7px;flex:1;background:#e7e9ec;border-radius:9px;overflow:hidden}.bar{height:100%;width:0;background:var(--ink);border-radius:9px}.percent{font-size:13px;color:var(--muted);font-weight:700}
-.exercise{padding:16px 18px}.exercise h3{font-size:20px;letter-spacing:-.25px}.last{font-size:15px;color:var(--muted);font-weight:600;margin-top:3px}.target{margin:10px 0 12px;font-size:16px}.target b{font-size:23px}.target .reason{color:var(--muted);font-weight:600;font-size:14px}
-.inputs{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.exercise{padding:16px 18px}.exercise h3{font-size:20px;letter-spacing:-.25px}.last{font-size:15px;color:var(--muted);font-weight:600;margin-top:3px}.target{margin:10px 0 12px;font-size:15px}.target .reason{color:var(--muted);font-weight:600;font-size:14px}.weight-row{display:flex;align-items:center;gap:8px;margin-bottom:10px}.weight-label{font-size:13px;color:var(--muted);font-weight:750;white-space:nowrap}.weight-row input{max-width:150px;text-align:left;font-size:20px}.weight-row span{font-size:14px;color:var(--muted);font-weight:700}.inputs{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
 input,textarea,select{width:100%;border:1.5px solid #d7dbe0;border-radius:13px;background:#fff;padding:12px 9px;text-align:center;color:var(--ink);font-weight:750;outline:none}
 input:focus,textarea:focus{border-color:#aeb5bd}
 textarea{text-align:left;margin-top:9px;resize:vertical}
@@ -49,7 +48,6 @@ textarea{text-align:left;margin-top:9px;resize:vertical}
 }
 @media(max-width:420px){
  .app-header{height:250px}.logo-window{width:250px;height:230px}.exercise h3{font-size:18px}.hero h1{font-size:26px}.inputs{grid-template-columns:repeat(3,1fr)}
- .target b{font-size:21px}
 }
 </style>
 </head>
@@ -119,7 +117,7 @@ textarea{text-align:left;margin-top:9px;resize:vertical}
     <div class="card">
       <h2 class="section-title">INSTÄLLNINGAR</h2>
       <div class="setting"><div><strong>Språk</strong></div><span>Svenska</span></div>
-      <div class="setting"><div><strong>Appversion</strong></div><span>V2.11.2</span></div>
+      <div class="setting"><div><strong>Appversion</strong></div><span>V2.11.3</span></div>
       <div class="setting"><div><strong>Träningsdata</strong></div><button class="badge" onclick="exportTrainingData()">Exportera</button></div>
       <div class="setting" style="display:block">
         <strong>ChatGPT ↔ DoNext</strong>
@@ -156,7 +154,7 @@ textarea{text-align:left;margin-top:9px;resize:vertical}
 </nav>
 
 <script>
-const APP_VERSION="2.11.2-event-sync";
+const APP_VERSION="2.11.3-manual-weight";
 const STORAGE_KEY="donextV2";
 const API_URL_KEY="donextApiUrl";
 const API_TOKEN_KEY="donextApiToken";
@@ -369,15 +367,25 @@ function previousFor(name){
  }
  return null;
 }
+function actualWeightOf(entry){
+ const raw=entry?.actualWeight??entry?.weight;
+ const n=Number(raw);
+ return Number.isFinite(n)?n:null;
+}
+function parseWeight(value){
+ const n=Number(String(value??"").trim().replace(",","."));
+ return Number.isFinite(n)&&n>0?n:null;
+}
 function suggestion(ex,base,unit,range){
  const h=previousFor(ex), parts=range.split("–").map(Number), lo=parts[0], hi=parts[1];
  if(!h)return {weight:base,reps:lo,reason:"Startvärde"};
  const avg=h.reps.reduce((a,b)=>a+b,0)/h.reps.length;
  if(avg>=hi){
-  const inc=unit==="platta"?1:(h.weight>=30?2.5:1);
-  return {weight:Number((h.weight+inc).toFixed(1)),reps:lo,reason:"Öka vikten"};
+  const previousWeight=actualWeightOf(h)??base;
+  const inc=unit==="platta"?1:(previousWeight>=30?2.5:1);
+  return {weight:Number((previousWeight+inc).toFixed(1)),reps:lo,reason:"Öka vikten"};
  }
- return {weight:h.weight,reps:Math.min(hi,Math.max(lo,Math.round(avg)+1)),reason:"Bygg reps"};
+ return {weight:actualWeightOf(h)??base,reps:Math.min(hi,Math.max(lo,Math.round(avg)+1)),reason:"Bygg reps"};
 }
 function esc(v){
  return String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
@@ -393,7 +401,8 @@ function render(){
   return `<div class="card exercise">
    <div class="row between"><h3>${esc(ex)}</h3><span class="badge">${sets} set</span></div>
    <div class="last">Senast: ${esc(prev)}</div>
-   <div class="target">🎯 <b>${esc(sug.weight)} ${esc(unitLabel)}</b> · ${esc(sug.reps)} reps/set <span class="reason">(${esc(sug.reason)})</span></div>
+   <div class="target">🎯 ${esc(sug.reps)} reps/set <span class="reason">(${esc(sug.reason)})</span></div>
+   <div class="weight-row"><label class="weight-label" for="wt-${i}">Vikt</label><input class="actual-weight" id="wt-${i}" inputmode="decimal" type="number" step="0.5" value="${esc(sug.weight)}" aria-label="Vikt"><span>${esc(unitLabel)}</span></div>
    <div class="inputs">${Array.from({length:sets},(_,j)=>`<input inputmode="decimal" type="number" placeholder="Set ${j+1}" id="r-${i}-${j}">`).join("")}</div>
    <input id="w-${i}" placeholder="Kommentar / obehag (valfritt)">
   </div>`;
@@ -411,7 +420,7 @@ function updateBar(){
 document.addEventListener("input",e=>{if(e.target.closest("#workout")){workoutDirty=true;saveDraft();updateBar()}});
 function saveDraft(){
  const values={};
- document.querySelectorAll("#workout input[id^=\"r-\"],#workout input[id^=\"w-\"]").forEach(x=>{if(x.value!=="")values[x.id]=x.value});
+ document.querySelectorAll("#workout input[id^=\"r-\"],#workout input[id^=\"w-\"],#workout input[id^=\"wt-\"]").forEach(x=>{if(x.value!=="")values[x.id]=x.value});
  const note=document.getElementById("sessionNote")?.value||"";
  if(!Object.keys(values).length&&!note){localStorage.removeItem(DRAFT_KEY);return}
  localStorage.setItem(DRAFT_KEY,JSON.stringify({workout:current,values,note,savedAt:new Date().toISOString()}));
@@ -442,8 +451,9 @@ async function saveWorkout(){
   const reps=[...document.querySelectorAll(`[id^="r-${i}-"]`)].map(x=>Number(x.value)).filter(x=>x>0);
   if(!reps.length)return;
   const h=previousFor(ex),sug=suggestion(ex,base,unit,range);
-  const weight=h?.weight??sug.weight;
-  exercises.push({exerciseId:exerciseId(ex),exercise:ex,weight,unit,reps,setsCompleted:reps.length,targetRange:range,comment:document.getElementById(`w-${i}`).value.trim()});
+  const actualWeight=parseWeight(document.getElementById(`wt-${i}`).value);
+  const weight=actualWeight??sug.weight;
+  exercises.push({exerciseId:exerciseId(ex),exercise:ex,weight,actualWeight:weight,recommendedWeight:sug.weight,unit,reps,setsCompleted:reps.length,targetRange:range,comment:document.getElementById(`w-${i}`).value.trim()});
  });
  if(!exercises.length){alert("Fyll i minst en övning först.");return}
  const session={id:(crypto.randomUUID?crypto.randomUUID():String(Date.now())),date:new Date().toISOString(),workout:current,sessionComment:document.getElementById("sessionNote").value.trim(),exercises};
@@ -485,7 +495,7 @@ function updateStats(){
  const latest={};
  state.history.forEach(s=>s.exercises.forEach(e=>{latest[e.exerciseId]=e}));
  const rows=Object.values(latest);
- document.getElementById("progressList").innerHTML=rows.length?rows.map(e=>`<div class="history-row"><strong>${esc(e.exercise)}</strong><small>${esc(e.weight)} ${esc(e.unit)} · ${esc(e.reps.join("/"))}</small></div>`).join(""):"Ingen data ännu.";
+ document.getElementById("progressList").innerHTML=rows.length?rows.map(e=>`<div class="history-row"><strong>${esc(e.exercise)}</strong><small>${esc(actualWeightOf(e)??e.weight)} ${esc(e.unit)} · ${esc(e.reps.join("/"))}</small></div>`).join(""):"Ingen data ännu.";
 }
 function localDateInputValue(date){return new Date(date).toLocaleDateString("sv-SE",{year:"numeric",month:"2-digit",day:"2-digit"}).split("-").reverse().join("-")}
 function togglePastWorkout(){
@@ -504,8 +514,9 @@ function renderPastExercises(){
   return `<div class="card exercise">
    <h3>${esc(ex)}</h3>
    <div class="last">Förslag: ${esc(sug.weight)} ${esc(unit)} · ${esc(sug.reps)} reps</div>
+   <label class="weight-label" for="past-w-${i}">Faktisk vikt</label>
+   <input id="past-w-${i}" inputmode="decimal" placeholder="Vikt${unit==="platta"?" / platta":" (kg)"}" value="${h?esc(actualWeightOf(h)??""):""}">
    <div class="inputs">${Array.from({length:sets},(_,j)=>`<input inputmode="decimal" type="number" placeholder="Set ${j+1}" id="past-r-${i}-${j}">`).join("")}</div>
-   <input id="past-w-${i}" inputmode="decimal" placeholder="Vikt${unit==="platta"?" / platta":" (kg)"}" value="${h?esc(h.weight):""}">
    <input id="past-c-${i}" placeholder="Kommentar / obehag (valfritt)">
   </div>`;
  }).join("");
@@ -519,8 +530,8 @@ async function savePastWorkout(){
   const reps=[...document.querySelectorAll(`[id^="past-r-${i}-"]`)].map(x=>Number(x.value)).filter(x=>x>0);
   if(!reps.length)return;
   const raw=document.getElementById(`past-w-${i}`).value.trim(),h=previousFor(ex),sug=suggestion(ex,base,unit,range);
-  const parsed=Number(raw.replace(",",".")),weight=Number.isFinite(parsed)?parsed:(h?.weight??sug.weight);
-  exercises.push({exerciseId:exerciseId(ex),exercise:ex,weight,unit,reps,setsCompleted:reps.length,targetRange:range,comment:document.getElementById(`past-c-${i}`).value.trim()});
+  const parsed=parseWeight(raw),weight=parsed??(actualWeightOf(h)??sug.weight);
+  exercises.push({exerciseId:exerciseId(ex),exercise:ex,weight,actualWeight:weight,recommendedWeight:sug.weight,unit,reps,setsCompleted:reps.length,targetRange:range,comment:document.getElementById(`past-c-${i}`).value.trim()});
  });
  if(!exercises.length){alert("Fyll i minst en övning först.");return}
  const [y,m,d]=dateValue.split("-");
