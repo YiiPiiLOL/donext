@@ -49,6 +49,7 @@ textarea{text-align:left;margin-top:9px;resize:vertical}
 @media(max-width:420px){
  .app-header{height:250px}.logo-window{width:250px;height:230px}.exercise h3{font-size:18px}.hero h1{font-size:26px}.inputs{grid-template-columns:repeat(3,1fr)}
 }
+.auth-overlay{position:fixed;inset:0;background:rgba(0,0,0,.62);z-index:50;display:flex;align-items:flex-end;justify-content:center;padding:12px}.auth-card{width:min(680px,100%);max-height:92vh;overflow:auto;background:#fff;border-radius:22px;padding:18px;box-shadow:0 12px 50px rgba(0,0,0,.3)}.auth-provider{width:100%;padding:13px;border:1px solid #d7dbe0;background:#fff;border-radius:13px;margin-top:10px;font-weight:800}.auth-divider{text-align:center;color:var(--muted);font-size:13px;font-weight:700;margin:14px 0 4px}.auth-overlay.hidden{display:none}
 </style>
 </head>
 <body>
@@ -118,15 +119,13 @@ textarea{text-align:left;margin-top:9px;resize:vertical}
     <div class="card">
       <h2 class="section-title">INSTÄLLNINGAR</h2>
       <div class="setting"><div><strong>Språk</strong></div><span>Svenska</span></div>
-      <div class="setting"><div><strong>Appversion</strong></div><span>V2.11.4</span></div>
+      <div class="setting"><div><strong>Appversion</strong></div><span>V2.11.7</span></div>
       <div class="setting"><div><strong>Träningsdata</strong></div><button class="badge" onclick="exportTrainingData()">Exportera</button></div>
       <div class="setting" style="display:block">
-        <strong>ChatGPT ↔ DoNext</strong>
-        <span style="display:block;margin-top:5px">API-koppling för att ta emot nästa pass direkt från din coach.</span>
-        <input id="apiUrl" placeholder="API-adress" style="margin-top:10px;text-align:left">
-        <input id="apiToken" placeholder="API-token" type="password" style="margin-top:8px;text-align:left">
+        <strong>Konto & coach</strong>
+        <span id="accountStatus" style="display:block;margin-top:5px">Inte inloggad</span>
         <div class="actions" style="margin-top:8px">
-          <button class="clear" onclick="saveApiSettings()">Spara anslutning</button>
+          <button class="clear" onclick="openAuth()">Konto / coach</button>
           <button class="save" onclick="syncNow()">↻ Synka nu</button>
         </div>
         <div id="syncStatus" style="font-size:13px;font-weight:700;margin-top:2px">Inte ansluten</div>
@@ -134,6 +133,36 @@ textarea{text-align:left;margin-top:9px;resize:vertical}
     </div>
   </section>
 </main>
+
+<div id="authOverlay" class="auth-overlay hidden" aria-modal="true" role="dialog">
+  <div class="auth-card">
+    <div class="row between"><h2 id="authTitle">Välkommen till DoNext</h2><button class="detail-back" onclick="closeAuth()">Stäng</button></div>
+    <p id="authIntro" class="detail-meta" style="margin-top:8px">Logga in för att spara din coach och din träningshistorik på ditt konto.</p>
+    <div id="loginPane">
+      <button class="auth-provider" onclick="providerLogin('google')">Fortsätt med Google</button>
+      <button class="auth-provider" onclick="providerLogin('apple')">Fortsätt med Apple</button>
+      <div class="auth-divider">eller e-post</div>
+      <input id="emailInput" type="email" autocomplete="email" placeholder="E-post" style="text-align:left">
+      <input id="passwordInput" type="password" autocomplete="current-password" placeholder="Lösenord" style="margin-top:8px;text-align:left">
+      <div class="actions"><button class="clear" onclick="emailAuth('register')">Skapa konto</button><button class="save" onclick="emailAuth('login')">Logga in</button></div>
+      <div id="authMessage" class="empty" style="padding:8px 0"></div>
+    </div>
+    <div id="onboardingPane" class="hidden">
+      <h3 style="margin-top:16px">Lär känna din coach</h3>
+      <p class="detail-meta" style="margin-top:5px">Några korta frågor räcker. Coachen sparar svaren och du behöver inte göra om detta nästa gång.</p>
+      <select id="coachGoal" style="margin-top:12px;text-align:left"><option value="hypertrophy_strength">Bygga muskler och bli starkare</option><option value="hypertrophy">Bygga muskler</option><option value="strength">Bli starkare</option><option value="general">Allmän träning</option></select>
+      <select id="coachLevel" style="margin-top:8px;text-align:left"><option value="beginner">Nybörjare</option><option value="intermediate" selected>Van</option><option value="advanced">Avancerad</option></select>
+      <input id="coachFrequency" placeholder="Hur ofta tränar du? t.ex. var 4:e dag" style="margin-top:8px;text-align:left">
+      <input id="coachDuration" placeholder="Hur långt är ett pass? t.ex. 60 min" style="margin-top:8px;text-align:left">
+      <textarea id="coachConstraints" rows="3" placeholder="Övningar/rörelser du undviker eller som ger obehag (valfritt)"></textarea>
+      <div class="actions"><button class="save" onclick="saveCoachProfile()">Klar – aktivera coach</button></div>
+    </div>
+    <div id="accountPane" class="hidden">
+      <div class="card" style="margin-top:14px"><strong id="accountEmail"></strong><div id="coachSummary" class="detail-meta" style="margin-top:6px"></div></div>
+      <div class="actions"><button class="clear" onclick="resetTestAccount()">Återställ testkonto</button><button class="save" onclick="logout()">Logga ut</button></div>
+    </div>
+  </div>
+</div>
 
 <nav class="bottom-nav" aria-label="Huvudnavigation">
   <button class="nav-btn active" data-view="today" onclick="showView('today',this)">
@@ -155,10 +184,9 @@ textarea{text-align:left;margin-top:9px;resize:vertical}
 </nav>
 
 <script>
-const APP_VERSION="2.11.4-history-details";
+const APP_VERSION="2.11.7-real-app-auth-foundation";
 const STORAGE_KEY="donextV2";
-const API_URL_KEY="donextApiUrl";
-const API_TOKEN_KEY="donextApiToken";
+const SESSION_KEY="donextSession";
 const DRAFT_KEY="donextWorkoutDraft";
 
 const DEFAULT_PROGRAM={
@@ -218,34 +246,23 @@ function loadState(){
  }catch(e){return clone(DEFAULT_STATE)}
 }
 function saveState(){localStorage.setItem(STORAGE_KEY,JSON.stringify(state))}
-function apiUrl(){
- const stored=(localStorage.getItem(API_URL_KEY)||"").replace(/\/+$/,"");
- if(stored){
-  try{
-   const u=new URL(stored);
-   if(/^[a-z0-9]{8}-donext\.chiips\.workers\.dev$/i.test(u.hostname)){
-    localStorage.setItem(API_URL_KEY,location.origin);
-    return location.origin;
-   }
-  }catch(e){}
- }
- return stored||location.origin
-}
-function apiToken(){return localStorage.getItem(API_TOKEN_KEY)||""}
-function authHeaders(){
- const h={"Content-Type":"application/json"};
- const t=apiToken(); if(t)h.Authorization="Bearer "+t;
- return h;
-}
-function setSyncStatus(msg,ok=false){
- const el=document.getElementById("syncStatus");
- if(el){el.textContent=msg;el.style.color=ok?"#16845c":"#697282";}
-}
-async function apiFetch(path,options={}){
- const res=await fetch(apiUrl()+path,{...options,headers:{...authHeaders(),...(options.headers||{})}});
- if(!res.ok)throw new Error((await res.text())||("HTTP "+res.status));
- return res.json();
-}
+function apiUrl(){return location.origin}
+function sessionToken(){return localStorage.getItem(SESSION_KEY)||""}
+function authHeaders(){const h={"Content-Type":"application/json"};const t=sessionToken();if(t)h.Authorization="Bearer "+t;return h}
+function setSyncStatus(msg,ok=false){const el=document.getElementById("syncStatus");if(el){el.textContent=msg;el.style.color=ok?"#16845c":"#697282"}}
+async function apiFetch(path,options={}){const res=await fetch(apiUrl()+path,{...options,headers:{...authHeaders(),...(options.headers||{})}});if(!res.ok)throw new Error((await res.text())||("HTTP "+res.status));return res.json()}
+async function refreshAccount(){if(!sessionToken()){updateAccountUI(null);return null}try{const me=await apiFetch("/api/auth/me");updateAccountUI(me);return me}catch(e){localStorage.removeItem(SESSION_KEY);updateAccountUI(null);return null}}
+function updateAccountUI(me){const s=document.getElementById("accountStatus");if(s)s.textContent=me?.email?`Inloggad: ${me.email}`:"Inte inloggad";if(me?.coachProfile)showAccountPane(me);else if(me)showOnboardingPane();}
+function openAuth(){document.getElementById("authOverlay").classList.remove("hidden");refreshAccount()}
+function closeAuth(){document.getElementById("authOverlay").classList.add("hidden")}
+function showOnboardingPane(){document.getElementById("loginPane").classList.add("hidden");document.getElementById("accountPane").classList.add("hidden");document.getElementById("onboardingPane").classList.remove("hidden")}
+function showAccountPane(me){document.getElementById("loginPane").classList.add("hidden");document.getElementById("onboardingPane").classList.add("hidden");document.getElementById("accountPane").classList.remove("hidden");document.getElementById("accountEmail").textContent=me.email||"Konto";const p=me.coachProfile||{};document.getElementById("coachSummary").textContent=`Coach aktiv · ${p.goal||"mål ej angivet"} · ${p.level||"nivå ej angiven"}`}
+function showLoginPane(){document.getElementById("loginPane").classList.remove("hidden");document.getElementById("onboardingPane").classList.add("hidden");document.getElementById("accountPane").classList.add("hidden")}
+async function emailAuth(mode){const email=document.getElementById("emailInput").value.trim(),password=document.getElementById("passwordInput").value;const msg=document.getElementById("authMessage");if(!email||password.length<8){msg.textContent="Ange e-post och ett lösenord på minst 8 tecken.";return}try{msg.textContent="Arbetar…";const r=await apiFetch("/api/auth/email",{method:"POST",body:JSON.stringify({mode,email,password})});localStorage.setItem(SESSION_KEY,r.token);msg.textContent="";await refreshAccount();await pullRemote()}catch(e){msg.textContent="Kunde inte logga in: "+e.message}}
+function providerLogin(provider){document.getElementById("authMessage").textContent=`${provider==="google"?"Google":"Apple"}-inloggning behöver konfigureras på DoNext-servern innan den kan användas.`}
+async function saveCoachProfile(){try{const profile={goal:document.getElementById("coachGoal").value,level:document.getElementById("coachLevel").value,frequency:document.getElementById("coachFrequency").value.trim(),duration:document.getElementById("coachDuration").value.trim(),constraints:document.getElementById("coachConstraints").value.trim()};const me=await apiFetch("/api/auth/coach",{method:"PUT",body:JSON.stringify(profile)});showAccountPane(me);await pullRemote()}catch(e){alert("Kunde inte spara coachprofilen: "+e.message)}}
+async function logout(){try{await apiFetch("/api/auth/logout",{method:"POST"})}catch(e){}localStorage.removeItem(SESSION_KEY);showLoginPane();updateAccountUI(null);setSyncStatus("Inte ansluten")}
+async function resetTestAccount(){if(!confirm("Återställ testkontots coach och träningsdata?"))return;try{await apiFetch("/api/auth/reset",{method:"POST"});state=clone(DEFAULT_STATE);current="A";localStorage.setItem(STORAGE_KEY,JSON.stringify(state));clearDraft();showOnboardingPane();render()}catch(e){alert("Kunde inte återställa testkontot: "+e.message)}}
 function mergeHistory(localHistory,remoteHistory){
  const map=new Map();
  for(const item of (remoteHistory||[]))if(item?.id)map.set(item.id,item);
@@ -253,7 +270,7 @@ function mergeHistory(localHistory,remoteHistory){
  return [...map.values()].sort((a,b)=>new Date(a.date)-new Date(b.date));
 }
 async function pullRemote(){
- if(!apiToken()){setSyncStatus("Inte ansluten");return false}
+ if(!sessionToken()){setSyncStatus("Inte ansluten");return false}
  if(syncBusy)return false;
  syncBusy=true;
  try{
@@ -318,7 +335,7 @@ async function pullRemote(){
  }finally{syncBusy=false}
 }
 async function syncPendingWorkouts(){
- if(!apiToken()||(state.pendingSync||[]).length===0)return false;
+ if(!sessionToken()||(state.pendingSync||[]).length===0)return false;
  let uploadedAny=false;
  const queue=[...state.pendingSync];
  for(const session of queue){
@@ -336,7 +353,7 @@ async function syncPendingWorkouts(){
 async function pushRemoteState(){
  // Kept for compatibility with V2.10; state-changing workout data uses the
  // idempotent /api/workout queue instead of replacing the entire remote state.
- if(!apiToken())return false;
+ if(!sessionToken())return false;
  try{
   setSyncStatus("Sparar…");
   await apiFetch("/api/state",{method:"PUT",body:JSON.stringify({
@@ -347,7 +364,7 @@ async function pushRemoteState(){
  }catch(e){setSyncStatus("Sparat lokalt – API ej nåbar");return false}
 }
 async function sendWorkoutToRemote(session){
- if(!apiToken())return false;
+ if(!sessionToken())return false;
  try{
   await apiFetch("/api/workout",{method:"POST",body:JSON.stringify(session)});
   state.pendingSync=state.pendingSync.filter(x=>x.id!==session.id);
@@ -578,28 +595,15 @@ function exportTrainingData(){
  const url=URL.createObjectURL(blob),a=document.createElement("a");
  a.href=url;a.download="donext-training-data.json";a.click();URL.revokeObjectURL(url);
 }
-function saveApiSettings(){
- const url=document.getElementById("apiUrl").value.trim().replace(/\/+$/ ,"");
- const token=document.getElementById("apiToken").value.trim();
- if(url)localStorage.setItem(API_URL_KEY,url);else localStorage.removeItem(API_URL_KEY);
- if(token)localStorage.setItem(API_TOKEN_KEY,token);else localStorage.removeItem(API_TOKEN_KEY);
- setSyncStatus(token?"Ansluten – tryck Synka":"Inte ansluten");
- if(token){pullRemote()}
-}
 async function syncNow(){
  await pullRemote();
  renderHistory();
 }
-function loadApiSettingsUI(){
- document.getElementById("apiUrl").value=apiUrl();
- document.getElementById("apiToken").value=localStorage.getItem(API_TOKEN_KEY)||"";
- setSyncStatus(apiToken()?"Ansluten":"Inte ansluten");
-}
+
 render();
-loadApiSettingsUI();
 if("serviceWorker" in navigator)navigator.serviceWorker.register("./sw.js",{updateViaCache:"none"}).catch(()=>{});
-if(apiToken())pullRemote();
-window.addEventListener("online",()=>{if(apiToken())pullRemote()});
+if(sessionToken())pullRemote();
+window.addEventListener("online",()=>{if(sessionToken())pullRemote()});
 </script>
 </body>
 </html>
