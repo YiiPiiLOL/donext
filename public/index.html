@@ -35,7 +35,7 @@ textarea{text-align:left;margin-top:9px;resize:vertical}
 .actions{display:flex;gap:10px;margin:12px 0 4px}.actions button{flex:1;padding:13px;border-radius:13px;font-weight:850}.clear{background:#e6e7e9;color:var(--ink)}.save{background:#111318;color:#fff}
 .section-title{font-size:24px;letter-spacing:-.5px;margin:5px 0 12px}
 .empty{color:var(--muted);font-weight:600;padding:20px 2px}
-.history-row{padding:14px 0;border-bottom:1px solid #e8eaed}.history-row:last-child{border-bottom:0}.history-row strong{font-size:16px}.history-row small{display:block;color:var(--muted);margin-top:4px}
+.history-row{padding:14px 0;border-bottom:1px solid #e8eaed}.history-row:last-child{border-bottom:0}.history-row.clickable{cursor:pointer}.history-row.clickable:active{background:#f7f8f9}.history-chevron{font-size:22px;color:var(--muted);line-height:1}.detail-head{display:flex;align-items:center;gap:10px;margin-bottom:14px}.detail-back{background:#eef0f2;color:var(--ink);border-radius:999px;padding:8px 12px;font-weight:850}.detail-title{font-size:24px;letter-spacing:-.5px}.detail-meta{color:var(--muted);font-weight:650;margin-top:3px}.detail-exercise{padding:14px 0;border-bottom:1px solid #e8eaed}.detail-exercise:last-child{border-bottom:0}.detail-exercise h3{font-size:18px}.detail-line{margin-top:6px;font-weight:650}.detail-muted{color:var(--muted);font-weight:600}.detail-note{margin-top:8px;padding:10px 12px;background:#f7f8f9;border-radius:12px}.detail-setgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:7px;margin-top:8px}.detail-set{padding:8px 10px;background:#f7f8f9;border-radius:10px;font-weight:700}.history-row strong{font-size:16px}.history-row small{display:block;color:var(--muted);margin-top:4px}
 .statgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.stat{background:#f7f8f9;border-radius:15px;padding:15px}.stat b{font-size:26px;display:block}.stat span{font-size:13px;color:var(--muted);font-weight:650}
 .setting{display:flex;justify-content:space-between;align-items:center;padding:15px 0;border-bottom:1px solid #e8eaed}.setting:last-child{border-bottom:0}.setting span{color:var(--muted);font-size:13px}
 .bottom-nav{position:fixed;left:0;right:0;bottom:0;height:78px;padding:5px 10px calc(5px + env(safe-area-inset-bottom));background:rgba(7,13,14,.98);display:grid;grid-template-columns:repeat(4,1fr);z-index:20;box-shadow:0 -2px 12px rgba(0,0,0,.15)}
@@ -94,6 +94,7 @@ textarea{text-align:left;margin-top:9px;resize:vertical}
         <div class="actions"><button class="clear" onclick="togglePastWorkout()">Avbryt</button><button class="save" onclick="savePastWorkout()">Spara historiskt pass</button></div>
       </div>
       <div id="historyList"></div>
+      <div id="historyDetail" class="hidden"></div>
     </div>
   </section>
 
@@ -117,7 +118,7 @@ textarea{text-align:left;margin-top:9px;resize:vertical}
     <div class="card">
       <h2 class="section-title">INSTÄLLNINGAR</h2>
       <div class="setting"><div><strong>Språk</strong></div><span>Svenska</span></div>
-      <div class="setting"><div><strong>Appversion</strong></div><span>V2.11.3</span></div>
+      <div class="setting"><div><strong>Appversion</strong></div><span>V2.11.4</span></div>
       <div class="setting"><div><strong>Träningsdata</strong></div><button class="badge" onclick="exportTrainingData()">Exportera</button></div>
       <div class="setting" style="display:block">
         <strong>ChatGPT ↔ DoNext</strong>
@@ -154,7 +155,7 @@ textarea{text-align:left;margin-top:9px;resize:vertical}
 </nav>
 
 <script>
-const APP_VERSION="2.11.3-manual-weight";
+const APP_VERSION="2.11.4-history-details";
 const STORAGE_KEY="donextV2";
 const API_URL_KEY="donextApiUrl";
 const API_TOKEN_KEY="donextApiToken";
@@ -476,16 +477,40 @@ function showView(id,btn){
  document.getElementById(id).classList.add("active");
  document.querySelectorAll(".nav-btn").forEach(x=>x.classList.remove("active"));
  if(btn)btn.classList.add("active");
- if(id==="historyView")renderHistory();
+ if(id==="historyView"){hideHistoryDetail();renderHistory();}
  if(id==="statsView")updateStats();
 }
 function renderHistory(){
  const list=[...state.history].sort((a,b)=>new Date(b.date)-new Date(a.date));
- document.getElementById("historyList").innerHTML=list.length?list.map(s=>{
+ const listEl=document.getElementById("historyList"),detailEl=document.getElementById("historyDetail");
+ if(detailEl&&!detailEl.classList.contains("hidden"))return;
+ listEl.innerHTML=list.length?list.map(s=>{
   const totalSets=s.exercises.reduce((n,e)=>n+(e.setsCompleted||e.reps?.length||0),0);
   const pending=(state.pendingSync||[]).some(x=>x.id===s.id);
-  return `<div class="history-row"><strong>Pass ${esc(s.workout)} · ${new Date(s.date).toLocaleDateString("sv-SE")}</strong><small>${s.exercises.length} övningar · ${totalSets} set${s.enteredAfterward?" · efterregistrerat":""}${pending?" · väntar på synkning":""}</small>${s.sessionComment?`<small>${esc(s.sessionComment)}</small>`:""}</div>`;
+  return `<div class="history-row clickable" role="button" tabindex="0" onclick="showHistoryDetail('${esc(s.id)}')" onkeydown="if(event.key==='Enter'||event.key===' ')showHistoryDetail('${esc(s.id)}')"><div class="row between"><div><strong>Pass ${esc(s.workout)} · ${new Date(s.date).toLocaleDateString("sv-SE")}</strong><small>${s.exercises.length} övningar · ${totalSets} set${s.enteredAfterward?" · efterregistrerat":""}${pending?" · väntar på synkning":""}</small>${s.sessionComment?`<small>${esc(s.sessionComment)}</small>`:""}</div><span class="history-chevron" aria-hidden="true">›</span></div></div>`;
  }).join(""):"<div class='empty'>Ingen träning registrerad ännu.</div>";
+}
+function showHistoryDetail(id){
+ const session=state.history.find(s=>s.id===id);
+ if(!session)return;
+ const detail=document.getElementById("historyDetail"),list=document.getElementById("historyList");
+ if(!detail||!list)return;
+ const totalSets=session.exercises.reduce((n,e)=>n+(e.setsCompleted||e.reps?.length||0),0);
+ detail.innerHTML=`<div class="detail-head"><button class="detail-back" onclick="hideHistoryDetail()">‹ Historik</button><div><div class="detail-title">Pass ${esc(session.workout)}</div><div class="detail-meta">${new Date(session.date).toLocaleDateString("sv-SE",{weekday:"long",year:"numeric",month:"long",day:"numeric"})} · ${session.exercises.length} övningar · ${totalSets} set</div></div></div>${session.exercises.map(e=>{
+  const weight=actualWeightOf(e);
+  const reps=Array.isArray(e.reps)?e.reps:[];
+  const setText=reps.length?reps.map((r,i)=>"<div class=\"detail-set\">Set "+(i+1)+": "+esc(r)+" reps</div>").join(""):"<div class=\"detail-muted\">Inga reps registrerade</div>";
+  return `<div class="detail-exercise"><h3>${esc(e.exercise)}</h3><div class="detail-line">Vikt: ${weight===null?"–":esc(weight)} ${esc(e.unit||"")}</div><div class="detail-setgrid">${setText}</div>${e.targetRange?`<div class="detail-line detail-muted">Mål: ${esc(e.targetRange)} reps</div>`:""}${e.recommendedWeight!==undefined?`<div class="detail-line detail-muted">Rekommenderat: ${esc(e.recommendedWeight)} ${esc(e.unit||"")}</div>`:""}${e.comment?`<div class="detail-note">${esc(e.comment)}</div>`:""}</div>`;
+ }).join("")}${session.sessionComment?`<div class="detail-note"><strong>Passkommentar</strong><br>${esc(session.sessionComment)}</div>`:""}`;
+ list.classList.add("hidden");
+ detail.classList.remove("hidden");
+ detail.scrollIntoView({behavior:"smooth",block:"start"});
+}
+function hideHistoryDetail(){
+ const detail=document.getElementById("historyDetail"),list=document.getElementById("historyList");
+ if(!detail||!list)return;
+ detail.classList.add("hidden");
+ list.classList.remove("hidden");
 }
 function updateStats(){
  document.getElementById("statSessions").textContent=state.history.length;
