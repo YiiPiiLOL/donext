@@ -1,0 +1,13 @@
+name = "donext"
+main = "worker.js"
+compatibility_date = "2026-09-09"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
+
+[[kv_namespaces]]
+binding = "DONEXT_KV"
+id = "0cb1de994dd6458d8887cac2225d9222"
