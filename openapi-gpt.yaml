@@ -1,0 +1,91 @@
+openapi: 3.1.0
+info:
+  title: DoNext GPT Coach API
+  version: 2.12.0
+  description: Per-user workout history and training plan for connected DoNext accounts.
+servers:
+  - url: https://donext.chiips.workers.dev
+security:
+  - oauth2: [training:read, training:write]
+paths:
+  /api/state:
+    get:
+      operationId: getTrainingState
+      summary: Read the connected user's training plan and state
+      responses:
+        '200': {description: Training state}
+    put:
+      operationId: updateTrainingState
+      summary: Update the connected user's training state
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: true}
+      responses:
+        '200': {description: Updated state}
+  /api/history:
+    get:
+      operationId: getTrainingHistory
+      summary: Read the connected user's logged workouts
+      responses:
+        '200': {description: Workout history}
+  /api/workout:
+    post:
+      operationId: saveWorkout
+      summary: Save a completed workout for the connected user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: true}
+      responses:
+        '200': {description: Updated training state}
+  /api/next-workout:
+    post:
+      operationId: setNextWorkout
+      summary: Set the next workout for the connected user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [workout, exercises]
+              properties:
+                workout: {type: string, enum: [A, B, C]}
+                exercises:
+                  type: array
+                  items: {type: object, additionalProperties: true}
+                reason: {type: string}
+      responses:
+        '200': {description: Updated training state}
+  /api/replace-exercise:
+    post:
+      operationId: replaceExercise
+      summary: Replace one exercise in the next workout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [workout, from, to]
+              properties:
+                workout: {type: string, enum: [A, B, C]}
+                from: {type: string}
+                to: {type: object, additionalProperties: true}
+                reason: {type: string}
+      responses:
+        '200': {description: Updated training state}
+components:
+  securitySchemes:
+    oauth2:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://donext.chiips.workers.dev/oauth/authorize
+          tokenUrl: https://donext.chiips.workers.dev/oauth/token
+          scopes:
+            training:read: Read training data
+            training:write: Update training data

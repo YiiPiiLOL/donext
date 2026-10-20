@@ -1,3 +1,4 @@
+import {oauthRoute,oauthUser} from "./oauth.js";
 const JSON_HEADERS={"content-type":"application/json; charset=utf-8","cache-control":"no-store"};
 const PBKDF2_ITERATIONS=20000;
 const MAX_EMAIL_LENGTH=254;
@@ -96,9 +97,11 @@ async function api(request,env,path){
   try{body=await request.json()}catch{return json({error:"Invalid request body"},400)}
   return emailAuth(body,env);
  }
- const session=await authUser(request,env);if(!session)return json({error:"Unauthorized"},401);const user=await getUser(env,session.uid);if(!user)return json({error:"Account not found"},401);
+ const session=(await oauthUser(request,env))||(await authUser(request,env));if(!session)return json({error:"Unauthorized"},401);const user=await getUser(env,session.uid);if(!user)return json({error:"Account not found"},401);
+ if(session.scope&& !session.scope.split(" ").includes(request.method==="GET"?"training:read":"training:write"))return json({error:"insufficient_scope"},403);
  if(path==="/api/auth/me"&&request.method==="GET")return json({id:user.id,email:user.email,provider:user.provider,coachProfile:user.coachProfile||null});
  if(path==="/api/auth/coach"&&request.method==="PUT"){const p=await request.json();user.coachProfile={goal:String(p.goal||""),level:String(p.level||""),frequency:String(p.frequency||""),duration:String(p.duration||""),constraints:String(p.constraints||""),updatedAt:new Date().toISOString()};await putUser(env,user);return json({id:user.id,email:user.email,provider:user.provider,coachProfile:user.coachProfile})}
+ if(path==="/api/auth/revoke-coach"&&request.method==="POST"){if(session.scope)return json({error:"Forbidden"},403);user.oauthEpoch=Number(user.oauthEpoch||0)+1;await putUser(env,user);return json({ok:true})}
  if(path==="/api/auth/logout"&&request.method==="POST")return json({ok:true});
  if(path==="/api/auth/reset"&&request.method==="POST"){await writeState(env,session.uid,emptyState());user.coachProfile=null;await putUser(env,user);return json({ok:true})}
  if(path==="/api/auth/google"||path==="/api/auth/apple")return json({error:"Provider not configured. Add the provider credentials and verification flow before enabling this endpoint."},501);
@@ -114,6 +117,7 @@ export default {async fetch(request,env){
  try{
   if(request.method==="OPTIONS")return withCors(new Response(null,{status:204}),request);
   const url=new URL(request.url);
+  if(url.pathname.startsWith("/oauth/"))return await oauthRoute(request,env,url);
   if(url.pathname.startsWith("/api/"))return withCors(await api(request,env,url.pathname),request);
   return env.ASSETS.fetch(request);
  }catch(err){
