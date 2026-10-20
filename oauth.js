@@ -145,7 +145,7 @@ ${fields}
         'content-type': 'text/html; charset=utf-8',
         'cache-control': 'no-store',
         'content-security-policy':
-         "default-src 'none'; style-src 'unsafe-inline'; form-action 'self' https://chat.openai.com; base-uri 'none'; frame-ancestors 'none'",
+        "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
         'x-frame-options': 'DENY',
         'referrer-policy': 'no-referrer'
       }
