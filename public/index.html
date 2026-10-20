@@ -119,7 +119,7 @@ textarea{text-align:left;margin-top:9px;resize:vertical}
     <div class="card">
       <h2 class="section-title">INSTÄLLNINGAR</h2>
       <div class="setting"><div><strong>Språk</strong></div><span>Svenska</span></div>
-      <div class="setting"><div><strong>Appversion</strong></div><span>V2.11.12</span></div>
+      <div class="setting"><div><strong>Appversion</strong></div><span>V2.12.0</span></div>
       <div class="setting"><div><strong>Träningsdata</strong></div><button class="badge" onclick="exportTrainingData()">Exportera</button></div>
       <div class="setting" style="display:block">
         <strong>Konto & coach</strong>
@@ -159,6 +159,7 @@ textarea{text-align:left;margin-top:9px;resize:vertical}
     </div>
     <div id="accountPane" class="hidden">
       <div class="card" style="margin-top:14px"><strong id="accountEmail"></strong><div id="coachSummary" class="detail-meta" style="margin-top:6px"></div></div>
+      <div class="actions"><button class="clear" onclick="revokeCoachAccess()">Koppla bort GPT-coach</button></div>
       <div class="actions"><button class="clear" onclick="resetTestAccount()">Återställ testkonto</button><button class="save" onclick="logout()">Logga ut</button></div>
     </div>
   </div>
@@ -184,7 +185,7 @@ textarea{text-align:left;margin-top:9px;resize:vertical}
 </nav>
 
 <script>
-const APP_VERSION="2.11.12-worker-restore";
+const APP_VERSION="2.12.0-oauth";
 const STORAGE_KEY="donextV2";
 const SESSION_KEY="donextSession";
 const DRAFT_KEY="donextWorkoutDraft";
@@ -299,6 +300,7 @@ async function emailAuth(mode){
 }
 function providerLogin(provider){document.getElementById("authMessage").textContent=`${provider==="google"?"Google":"Apple"}-inloggning behöver konfigureras på DoNext-servern innan den kan användas.`}
 async function saveCoachProfile(){try{const profile={goal:document.getElementById("coachGoal").value,level:document.getElementById("coachLevel").value,frequency:document.getElementById("coachFrequency").value.trim(),duration:document.getElementById("coachDuration").value.trim(),constraints:document.getElementById("coachConstraints").value.trim()};const me=await apiFetch("/api/auth/coach",{method:"PUT",body:JSON.stringify(profile)});showAccountPane(me);await pullRemote()}catch(e){alert("Kunde inte spara coachprofilen: "+e.message)}}
+async function revokeCoachAccess(){if(!confirm("Återkalla GPT-coachens åtkomst till ditt konto?"))return;try{await apiFetch("/api/auth/revoke-coach",{method:"POST"});alert("GPT-coachens åtkomst har återkallats.")}catch(e){alert("Kunde inte återkalla åtkomst. Försök igen.")}}
 async function logout(){try{await apiFetch("/api/auth/logout",{method:"POST"})}catch(e){}localStorage.removeItem(SESSION_KEY);showLoginPane();updateAccountUI(null);setSyncStatus("Inte ansluten")}
 async function resetTestAccount(){if(!confirm("Återställ testkontots coach och träningsdata?"))return;try{await apiFetch("/api/auth/reset",{method:"POST"});state=clone(DEFAULT_STATE);current="A";localStorage.setItem(STORAGE_KEY,JSON.stringify(state));clearDraft();showOnboardingPane();render()}catch(e){alert("Kunde inte återställa testkontot: "+e.message)}}
 function mergeHistory(localHistory,remoteHistory){
