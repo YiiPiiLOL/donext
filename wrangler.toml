@@ -12,3 +12,6 @@ run_worker_first = ["/api/*"]
 [[kv_namespaces]]
 binding = "DONEXT_KV"
 id = "0cb1de994dd6458d8887cac2225d9222"
+
+[vars]
+DONEXT_AUTH_SECRET = "ceJs23iu1oOgRNQpNttJTITztjSX89c2tEeUvY53mbQOlXtWEhmBVbhMOf7ZGwDJ"
