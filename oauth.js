@@ -1,26 +1,481 @@
-// DoNext OAuth 2.0 Authorization Code + PKCE for ChatGPT Actions.
-// Configure DONEXT_OAUTH_CLIENT_ID, DONEXT_OAUTH_CLIENT_SECRET and
-// DONEXT_OAUTH_REDIRECT_URIS (comma-separated exact callback URLs) as Worker secrets.
-const enc=new TextEncoder();
-const json=(x,s=200)=>new Response(JSON.stringify(x),{status:s,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store','pragma':'no-cache'}});
-const err=(code,s=400)=>json({error:code},s);
-const rand=()=>{const b=crypto.getRandomValues(new Uint8Array(32));return Array.from(b,x=>x.toString(16).padStart(2,'0')).join('')};
-const digest=async s=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',enc.encode(s))),x=>x.toString(16).padStart(2,'0')).join('');
-const b64url=bytes=>btoa(String.fromCharCode(...bytes)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
-const shaChallenge=async s=>b64url(new Uint8Array(await crypto.subtle.digest('SHA-256',enc.encode(s))));
-const equal=(a,b)=>{const x=enc.encode(a),y=enc.encode(b);if(x.length!==y.length)return false;let d=0;for(let i=0;i<x.length;i++)d|=x[i]^y[i];return d===0};
-const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-function config(env){return Boolean(env.DONEXT_OAUTH_CLIENT_ID&&env.DONEXT_OAUTH_CLIENT_SECRET&&env.DONEXT_OAUTH_REDIRECT_URIS&&env.DONEXT_KV)}
-function validRedirect(uri,env){return String(env.DONEXT_OAUTH_REDIRECT_URIS||'').split(',').map(x=>x.trim()).filter(Boolean).includes(uri)}
-function validRequest(p,env){const redirect=p.get('redirect_uri')||'',cid=p.get('client_id')||'',challenge=p.get('code_challenge')||'',scope=p.get('scope')||'training:read training:write';return cid===env.DONEXT_OAUTH_CLIENT_ID&&validRedirect(redirect,env)&&p.get('response_type')==='code'&&p.get('code_challenge_method')==='S256'&&/^[A-Za-z0-9_-]{43,128}$/.test(challenge)&&/^[A-Za-z0-9: ]{1,100}$/.test(scope)&&scope.split(' ').every(s=>['training:read','training:write'].includes(s))}
-function loginPage(p,error=''){
- const fields=['client_id','redirect_uri','response_type','state','code_challenge','code_challenge_method','scope'].map(k=>`<input type="hidden" name="${k}" value="${esc(p.get(k)||'')}">`).join('');
- return new Response(`<!doctype html><html lang="sv"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Anslut DoNext-coach</title><style>body{font:16px system-ui;background:#101113;color:#f1f5f9;display:grid;place-items:center;min-height:95vh;margin:0}main{width:min(420px,90vw);background:#1d222b;border:1px solid #334155;border-radius:20px;padding:26px;box-sizing:border-box}h1{color:#43c9ff}label{display:block;margin:14px 0}input:not([type=hidden]){box-sizing:border-box;width:100%;padding:12px;border-radius:9px;border:1px solid #64748b;background:#101113;color:white}button{background:#15a8eb;color:#08121c;font-weight:bold;border:0;border-radius:10px;padding:14px;width:100%;cursor:pointer}.error{color:#ff9a9a}</style><main><h1>DoNext</h1><h2>Anslut din GPT-coach</h2><p>Logga in för att ge din GPT-coach tillgång till dina träningspass och ditt träningsprogram. Du kan återkalla åtkomsten senare.</p>${error?`<p class="error">${esc(error)}</p>`:''}<form method="post" action="/oauth/authorize">${fields}<label>E-post<input type="email" name="email" required autocomplete="username"></label><label>Lösenord<input type="password" name="password" required autocomplete="current-password"></label><button type="submit" name="approve" value="yes">Logga in och godkänn</button></form></main></html>`,{headers:{'content-type':'text/html; charset=utf-8','cache-control':'no-store','content-security-policy':"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",'x-frame-options':'DENY','referrer-policy':'no-referrer'}})
+
+// DoNext OAuth 2.0 Authorization Code with optional PKCE S256.
+// Compatible with ChatGPT Actions using a confidential OAuth client.
+
+const enc = new TextEncoder();
+
+const json = (x, s = 200) =>
+  new Response(JSON.stringify(x), {
+    status: s,
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+      'pragma': 'no-cache'
+    }
+  });
+
+const err = (code, s = 400) => json({ error: code }, s);
+
+const rand = () => {
+  const b = crypto.getRandomValues(new Uint8Array(32));
+  return Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+};
+
+const digest = async s =>
+  Array.from(
+    new Uint8Array(await crypto.subtle.digest('SHA-256', enc.encode(s))),
+    x => x.toString(16).padStart(2, '0')
+  ).join('');
+
+const b64url = bytes =>
+  btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+
+const shaChallenge = async s =>
+  b64url(new Uint8Array(
+    await crypto.subtle.digest('SHA-256', enc.encode(s))
+  ));
+
+const equal = (a, b) => {
+  const x = enc.encode(a);
+  const y = enc.encode(b);
+  if (x.length !== y.length) return false;
+  let d = 0;
+  for (let i = 0; i < x.length; i++) d |= x[i] ^ y[i];
+  return d === 0;
+};
+
+const esc = s =>
+  String(s).replace(/[&<>"']/g, c => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  }[c]));
+
+function config(env) {
+  return Boolean(
+    env.DONEXT_OAUTH_CLIENT_ID &&
+    env.DONEXT_OAUTH_CLIENT_SECRET &&
+    env.DONEXT_OAUTH_REDIRECT_URIS &&
+    env.DONEXT_KV
+  );
 }
-async function passwordMatches(password,user){if(!user||user.provider!=='email'||!user.passwordHash||!user.passwordSalt)return false;const iterations=Number(user.passwordIterations||120000);if(!Number.isInteger(iterations)||iterations<1000||iterations>1000000)return false;const key=await crypto.subtle.importKey('raw',enc.encode(password),{name:'PBKDF2'},false,['deriveBits']);const bits=await crypto.subtle.deriveBits({name:'PBKDF2',salt:enc.encode(user.passwordSalt),iterations,hash:'SHA-256'},key,256);return equal(b64url(new Uint8Array(bits)),user.passwordHash)}
-async function authorize(request,env,url){if(!config(env))return err('oauth_not_configured',503);const p=request.method==='POST'?new URLSearchParams(await request.text()):url.searchParams;if(!validRequest(p,env))return err('invalid_request');if(request.method==='GET')return loginPage(p);if(request.method!=='POST')return err('invalid_request',405);if(p.get('approve')!=='yes')return err('access_denied');const email=(p.get('email')||'').trim().toLowerCase(),password=p.get('password')||'';const uid=await env.DONEXT_KV.get('email:'+email);const raw=uid?await env.DONEXT_KV.get('user:'+uid):null;const user=raw?JSON.parse(raw):null;if(!await passwordMatches(password,user))return loginPage(p,'Fel e-postadress eller lösenord');const code=rand(),data={uid:user.id,client_id:p.get('client_id'),redirect_uri:p.get('redirect_uri'),challenge:p.get('code_challenge'),scope:p.get('scope')||'training:read training:write',epoch:Number(user.oauthEpoch||0)};await env.DONEXT_KV.put('oauth:code:'+await digest(code),JSON.stringify(data),{expirationTtl:300});const redirect=new URL(p.get('redirect_uri'));redirect.searchParams.set('code',code);if(p.has('state'))redirect.searchParams.set('state',p.get('state'));return new Response(null,{status:302,headers:{location:redirect.href,'cache-control':'no-store','referrer-policy':'no-referrer'}})}
-async function issueTokens(env,uid,scope,client_id){const rawUser=await env.DONEXT_KV.get('user:'+uid);if(!rawUser)return err('invalid_grant');const epoch=Number(JSON.parse(rawUser).oauthEpoch||0);const access=rand(),refresh=rand();await env.DONEXT_KV.put('oauth:access:'+await digest(access),JSON.stringify({uid,scope,client_id,epoch}),{expirationTtl:3600});await env.DONEXT_KV.put('oauth:refresh:'+await digest(refresh),JSON.stringify({uid,scope,client_id,epoch}),{expirationTtl:2592000});return json({access_token:access,token_type:'Bearer',expires_in:3600,refresh_token:refresh,scope})}
-async function token(request,env){if(request.method!=='POST')return err('invalid_request',405);if(!config(env))return err('oauth_not_configured',503);const p=new URLSearchParams(await request.text());let cid=p.get('client_id')||'',secret=p.get('client_secret')||'';const auth=request.headers.get('Authorization')||'';if(auth.startsWith('Basic ')){try{const pair=atob(auth.slice(6));const ix=pair.indexOf(':');cid=decodeURIComponent(pair.slice(0,ix));secret=decodeURIComponent(pair.slice(ix+1))}catch{return err('invalid_client',401)}}if(!equal(cid,String(env.DONEXT_OAUTH_CLIENT_ID))||!equal(secret,String(env.DONEXT_OAUTH_CLIENT_SECRET)))return err('invalid_client',401);if(p.get('grant_type')==='authorization_code'){const code=p.get('code')||'',verifier=p.get('code_verifier')||'';if(!/^[A-Za-z0-9_-]{43,128}$/.test(verifier))return err('invalid_grant');const key='oauth:code:'+await digest(code),raw=await env.DONEXT_KV.get(key);if(!raw)return err('invalid_grant');const data=JSON.parse(raw);if(data.client_id!==cid||data.redirect_uri!==p.get('redirect_uri')||!equal(data.challenge,await shaChallenge(verifier)))return err('invalid_grant');await env.DONEXT_KV.delete(key);const rawUser=await env.DONEXT_KV.get('user:'+data.uid);if(!rawUser||Number(JSON.parse(rawUser).oauthEpoch||0)!==Number(data.epoch||0))return err('invalid_grant');return issueTokens(env,data.uid,data.scope,cid)}if(p.get('grant_type')==='refresh_token'){const value=p.get('refresh_token')||'',key='oauth:refresh:'+await digest(value),raw=await env.DONEXT_KV.get(key);if(!raw)return err('invalid_grant');const data=JSON.parse(raw);if(data.client_id!==cid)return err('invalid_grant');await env.DONEXT_KV.delete(key);const rawUser=await env.DONEXT_KV.get('user:'+data.uid);if(!rawUser||Number(JSON.parse(rawUser).oauthEpoch||0)!==Number(data.epoch||0))return err('invalid_grant');return issueTokens(env,data.uid,data.scope,cid)}return err('unsupported_grant_type')}
-async function revoke(request,env){if(request.method!=='POST')return err('invalid_request',405);const p=new URLSearchParams(await request.text());if(!config(env)||p.get('client_id')!==env.DONEXT_OAUTH_CLIENT_ID||p.get('client_secret')!==env.DONEXT_OAUTH_CLIENT_SECRET)return err('invalid_client',401);const value=p.get('token')||'';const hash=await digest(value);await Promise.all(['access','refresh'].map(t=>env.DONEXT_KV.delete('oauth:'+t+':'+hash)));return json({ok:true})}
-export async function oauthRoute(request,env,url){if(url.pathname==='/oauth/authorize')return authorize(request,env,url);if(url.pathname==='/oauth/token')return token(request,env);if(url.pathname==='/oauth/revoke')return revoke(request,env);return err('not_found',404)}
-export async function oauthUser(request,env){const h=request.headers.get('Authorization')||'';if(!h.startsWith('Bearer '))return null;const token=h.slice(7);if(!/^[a-f0-9]{64}$/.test(token))return null;const raw=await env.DONEXT_KV.get('oauth:access:'+await digest(token));if(!raw)return null;const data=JSON.parse(raw);if(!data?.uid)return null;const userRaw=await env.DONEXT_KV.get('user:'+data.uid);if(!userRaw||Number(JSON.parse(userRaw).oauthEpoch||0)!==Number(data.epoch||0))return null;return data}
+
+function validRedirect(uri, env) {
+  return String(env.DONEXT_OAUTH_REDIRECT_URIS || '')
+    .split(',')
+    .map(x => x.trim())
+    .filter(Boolean)
+    .includes(uri);
+}
+
+function validRequest(p, env) {
+  const redirect = p.get('redirect_uri') || '';
+  const cid = p.get('client_id') || '';
+  const challenge = p.get('code_challenge') || '';
+  const method = p.get('code_challenge_method') || '';
+  const scope = p.get('scope') || 'training:read training:write';
+
+  // PKCE is optional for this registered confidential client.
+  // If PKCE is supplied, require a valid S256 challenge.
+  const validPkce = !challenge && !method
+    ? true
+    : method === 'S256' &&
+      /^[A-Za-z0-9_-]{43,128}$/.test(challenge);
+
+  return (
+    cid === env.DONEXT_OAUTH_CLIENT_ID &&
+    validRedirect(redirect, env) &&
+    p.get('response_type') === 'code' &&
+    validPkce &&
+    /^[A-Za-z0-9: ]{1,100}$/.test(scope) &&
+    scope.split(' ').every(
+      s => ['training:read', 'training:write'].includes(s)
+    )
+  );
+}
+
+function loginPage(p, error = '') {
+  const fields = [
+    'client_id',
+    'redirect_uri',
+    'response_type',
+    'state',
+    'code_challenge',
+    'code_challenge_method',
+    'scope'
+  ].map(k =>
+    `<input type="hidden" name="${k}" value="${esc(p.get(k) || '')}">`
+  ).join('');
+
+  return new Response(
+    `<!doctype html>
+<html lang="sv">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Anslut DoNext-coach</title>
+<style>
+body{font:16px system-ui;background:#101113;color:#f1f5f9;display:grid;place-items:center;min-height:95vh;margin:0}
+main{width:min(420px,90vw);background:#1d222b;border:1px solid #334155;border-radius:20px;padding:26px;box-sizing:border-box}
+h1{color:#43c9ff}
+label{display:block;margin:14px 0}
+input:not([type=hidden]){box-sizing:border-box;width:100%;padding:12px;border-radius:9px;border:1px solid #64748b;background:#101113;color:white}
+button{background:#15a8eb;color:#08121c;font-weight:bold;border:0;border-radius:10px;padding:14px;width:100%;cursor:pointer}
+.error{color:#ff9a9a}
+</style>
+<main>
+<h1>DoNext</h1>
+<h2>Anslut din GPT-coach</h2>
+<p>Logga in för att ge din GPT-coach tillgång till dina träningspass och ditt träningsprogram. Du kan återkalla åtkomsten senare.</p>
+${error ? `<p class="error">${esc(error)}</p>` : ''}
+<form method="post" action="/oauth/authorize">
+${fields}
+<label>E-post<input type="email" name="email" required autocomplete="username"></label>
+<label>Lösenord<input type="password" name="password" required autocomplete="current-password"></label>
+<button type="submit" name="approve" value="yes">Logga in och godkänn</button>
+</form>
+</main>
+</html>`,
+    {
+      headers: {
+        'content-type': 'text/html; charset=utf-8',
+        'cache-control': 'no-store',
+        'content-security-policy':
+          "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+        'x-frame-options': 'DENY',
+        'referrer-policy': 'no-referrer'
+      }
+    }
+  );
+}
+
+async function passwordMatches(password, user) {
+  if (
+    !user ||
+    user.provider !== 'email' ||
+    !user.passwordHash ||
+    !user.passwordSalt
+  ) return false;
+
+  const iterations = Number(user.passwordIterations || 120000);
+  if (
+    !Number.isInteger(iterations) ||
+    iterations < 1000 ||
+    iterations > 1000000
+  ) return false;
+
+  const key = await crypto.subtle.importKey(
+    'raw',
+    enc.encode(password),
+    { name: 'PBKDF2' },
+    false,
+    ['deriveBits']
+  );
+
+  const bits = await crypto.subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      salt: enc.encode(user.passwordSalt),
+      iterations,
+      hash: 'SHA-256'
+    },
+    key,
+    256
+  );
+
+  return equal(
+    b64url(new Uint8Array(bits)),
+    user.passwordHash
+  );
+}
+
+async function authorize(request, env, url) {
+  if (!config(env)) return err('oauth_not_configured', 503);
+
+  const p = request.method === 'POST'
+    ? new URLSearchParams(await request.text())
+    : url.searchParams;
+
+  if (!validRequest(p, env)) return err('invalid_request');
+
+  if (request.method === 'GET') return loginPage(p);
+  if (request.method !== 'POST') return err('invalid_request', 405);
+  if (p.get('approve') !== 'yes') return err('access_denied');
+
+  const email = (p.get('email') || '').trim().toLowerCase();
+  const password = p.get('password') || '';
+
+  const uid = await env.DONEXT_KV.get('email:' + email);
+  const raw = uid
+    ? await env.DONEXT_KV.get('user:' + uid)
+    : null;
+  const user = raw ? JSON.parse(raw) : null;
+
+  if (!await passwordMatches(password, user)) {
+    return loginPage(p, 'Fel e-postadress eller lösenord');
+  }
+
+  const code = rand();
+
+  const data = {
+    uid: user.id,
+    client_id: p.get('client_id'),
+    redirect_uri: p.get('redirect_uri'),
+    challenge: p.get('code_challenge') || null,
+    scope: p.get('scope') || 'training:read training:write',
+    epoch: Number(user.oauthEpoch || 0)
+  };
+
+  await env.DONEXT_KV.put(
+    'oauth:code:' + await digest(code),
+    JSON.stringify(data),
+    { expirationTtl: 300 }
+  );
+
+  const redirect = new URL(p.get('redirect_uri'));
+  redirect.searchParams.set('code', code);
+
+  if (p.has('state')) {
+    redirect.searchParams.set('state', p.get('state'));
+  }
+
+  return new Response(null, {
+    status: 302,
+    headers: {
+      location: redirect.href,
+      'cache-control': 'no-store',
+      'referrer-policy': 'no-referrer'
+    }
+  });
+}
+
+async function issueTokens(env, uid, scope, client_id) {
+  const rawUser = await env.DONEXT_KV.get('user:' + uid);
+  if (!rawUser) return err('invalid_grant');
+
+  const epoch = Number(JSON.parse(rawUser).oauthEpoch || 0);
+  const access = rand();
+  const refresh = rand();
+
+  await env.DONEXT_KV.put(
+    'oauth:access:' + await digest(access),
+    JSON.stringify({ uid, scope, client_id, epoch }),
+    { expirationTtl: 3600 }
+  );
+
+  await env.DONEXT_KV.put(
+    'oauth:refresh:' + await digest(refresh),
+    JSON.stringify({ uid, scope, client_id, epoch }),
+    { expirationTtl: 2592000 }
+  );
+
+  return json({
+    access_token: access,
+    token_type: 'Bearer',
+    expires_in: 3600,
+    refresh_token: refresh,
+    scope
+  });
+}
+
+async function token(request, env) {
+  if (request.method !== 'POST') {
+    return err('invalid_request', 405);
+  }
+
+  if (!config(env)) {
+    return err('oauth_not_configured', 503);
+  }
+
+  const p = new URLSearchParams(await request.text());
+
+  let cid = p.get('client_id') || '';
+  let secret = p.get('client_secret') || '';
+
+  const auth = request.headers.get('Authorization') || '';
+
+  if (auth.startsWith('Basic ')) {
+    try {
+      const pair = atob(auth.slice(6));
+      const ix = pair.indexOf(':');
+
+      if (ix < 0) return err('invalid_client', 401);
+
+      cid = decodeURIComponent(pair.slice(0, ix));
+      secret = decodeURIComponent(pair.slice(ix + 1));
+    } catch {
+      return err('invalid_client', 401);
+    }
+  }
+
+  if (
+    !equal(cid, String(env.DONEXT_OAUTH_CLIENT_ID)) ||
+    !equal(secret, String(env.DONEXT_OAUTH_CLIENT_SECRET))
+  ) {
+    return err('invalid_client', 401);
+  }
+
+  if (p.get('grant_type') === 'authorization_code') {
+    const code = p.get('code') || '';
+    const verifier = p.get('code_verifier') || '';
+
+    const key = 'oauth:code:' + await digest(code);
+    const raw = await env.DONEXT_KV.get(key);
+
+    if (!raw) return err('invalid_grant');
+
+    const data = JSON.parse(raw);
+
+    if (
+      data.client_id !== cid ||
+      data.redirect_uri !== p.get('redirect_uri')
+    ) {
+      return err('invalid_grant');
+    }
+
+    // Enforce PKCE if the authorization request used PKCE.
+    // Otherwise rely on the registered confidential client secret.
+    if (data.challenge) {
+      if (!/^[A-Za-z0-9_-]{43,128}$/.test(verifier)) {
+        return err('invalid_grant');
+      }
+
+      if (!equal(data.challenge, await shaChallenge(verifier))) {
+        return err('invalid_grant');
+      }
+    }
+
+    await env.DONEXT_KV.delete(key);
+
+    const rawUser = await env.DONEXT_KV.get('user:' + data.uid);
+
+    if (
+      !rawUser ||
+      Number(JSON.parse(rawUser).oauthEpoch || 0) !==
+      Number(data.epoch || 0)
+    ) {
+      return err('invalid_grant');
+    }
+
+    return issueTokens(
+      env,
+      data.uid,
+      data.scope,
+      cid
+    );
+  }
+
+  if (p.get('grant_type') === 'refresh_token') {
+    const value = p.get('refresh_token') || '';
+    const key = 'oauth:refresh:' + await digest(value);
+    const raw = await env.DONEXT_KV.get(key);
+
+    if (!raw) return err('invalid_grant');
+
+    const data = JSON.parse(raw);
+
+    if (data.client_id !== cid) {
+      return err('invalid_grant');
+    }
+
+    await env.DONEXT_KV.delete(key);
+
+    const rawUser = await env.DONEXT_KV.get('user:' + data.uid);
+
+    if (
+      !rawUser ||
+      Number(JSON.parse(rawUser).oauthEpoch || 0) !==
+      Number(data.epoch || 0)
+    ) {
+      return err('invalid_grant');
+    }
+
+    return issueTokens(
+      env,
+      data.uid,
+      data.scope,
+      cid
+    );
+  }
+
+  return err('unsupported_grant_type');
+}
+
+async function revoke(request, env) {
+  if (request.method !== 'POST') {
+    return err('invalid_request', 405);
+  }
+
+  const p = new URLSearchParams(await request.text());
+
+  if (
+    !config(env) ||
+    p.get('client_id') !== env.DONEXT_OAUTH_CLIENT_ID ||
+    p.get('client_secret') !== env.DONEXT_OAUTH_CLIENT_SECRET
+  ) {
+    return err('invalid_client', 401);
+  }
+
+  const value = p.get('token') || '';
+  const hash = await digest(value);
+
+  await Promise.all(
+    ['access', 'refresh'].map(t =>
+      env.DONEXT_KV.delete('oauth:' + t + ':' + hash)
+    )
+  );
+
+  return json({ ok: true });
+}
+
+export async function oauthRoute(request, env, url) {
+  if (url.pathname === '/oauth/authorize') {
+    return authorize(request, env, url);
+  }
+
+  if (url.pathname === '/oauth/token') {
+    return token(request, env);
+  }
+
+  if (url.pathname === '/oauth/revoke') {
+    return revoke(request, env);
+  }
+
+  return err('not_found', 404);
+}
+
+export async function oauthUser(request, env) {
+  const h = request.headers.get('Authorization') || '';
+
+  if (!h.startsWith('Bearer ')) return null;
+
+  const token = h.slice(7);
+
+  if (!/^[a-f0-9]{64}$/.test(token)) return null;
+
+  const raw = await env.DONEXT_KV.get(
+    'oauth:access:' + await digest(token)
+  );
+
+  if (!raw) return null;
+
+  const data = JSON.parse(raw);
+
+  if (!data?.uid) return null;
+
+  const userRaw = await env.DONEXT_KV.get('user:' + data.uid);
+
+  if (
+    !userRaw ||
+    Number(JSON.parse(userRaw).oauthEpoch || 0) !==
+    Number(data.epoch || 0)
+  ) {
+    return null;
+  }
+
+  return data;
+}
