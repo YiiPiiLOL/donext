@@ -1,3 +1,4 @@
+
 <!doctype html>
 <html lang="sv">
 <head>
@@ -119,7 +120,7 @@ textarea{text-align:left;margin-top:9px;resize:vertical}
     <div class="card">
       <h2 class="section-title">INSTÄLLNINGAR</h2>
       <div class="setting"><div><strong>Språk</strong></div><span>Svenska</span></div>
-      <div class="setting"><div><strong>Appversion</strong></div><span>V2.12.0</span></div>
+      <div class="setting"><div><strong>Appversion</strong></div><span>V2.12.1</span></div>
       <div class="setting"><div><strong>Träningsdata</strong></div><button class="badge" onclick="exportTrainingData()">Exportera</button></div>
       <div class="setting" style="display:block">
         <strong>Konto & coach</strong>
@@ -179,13 +180,13 @@ textarea{text-align:left;margin-top:9px;resize:vertical}
     Statistik
   </button>
   <button class="nav-btn" data-view="settingsView" onclick="showView('settingsView',this)">
-    <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"/><path d="m19 13 .1-1-.1-1 2-1.2-2-3.4-2.1.9a8 8 0 0 0-1.7-1L15 4h-6l-.2 2.3a8 8 0 0 0-1.7 1L5 6.4 3 9.8 5 11a8 8 0 0 0 0 2l-2 1.2 2 3.4 2.1-.9a8 8 0 0 0 1.7 1L9 20h6l.2-2.3a8 8 0 0 0 1.7-1l2.1.9 2-3.4L19 13Z"/></svg></span>
+    <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"/><path d="m19 13 .1-1-.1-1 2-1.2-2-3.4-2.1.9a8 8 0 0 0-1.7-1L15 4h-6l-.2 2.3a8 8 0 0 0-1.7 1L5 6.4 3 9.8 5 11a8 8 0 0 0 1.7 1L9 20h6l.2-2.3a8 8 0 0 0 1.7-1l2.1.9 2-3.4L19 13Z"/></svg></span>
     Inställningar
   </button>
 </nav>
 
 <script>
-const APP_VERSION="2.12.0-oauth";
+const APP_VERSION="2.12.1-syncfix";
 const STORAGE_KEY="donextV2";
 const SESSION_KEY="donextSession";
 const DRAFT_KEY="donextWorkoutDraft";
@@ -223,16 +224,28 @@ const DEFAULT_PROGRAM={
  ]
 };
 
-const DEFAULT_STATE={schemaVersion:2,next:"A",sessions:0,history:[],program:DEFAULT_PROGRAM,pendingSync:[]};
-let state=loadState(), current=state.next;
+const DEFAULT_STATE={
+ schemaVersion:2,
+ next:"A",
+ sessions:0,
+ history:[],
+ program:DEFAULT_PROGRAM,
+ pendingSync:[]
+};
+
+let state=loadState(),current=state.next;
 let syncBusy=false;
 let workoutDirty=false;
+
 try{
  const draft=JSON.parse(localStorage.getItem(DRAFT_KEY)||"null");
- if(draft?.workout&&["A","B","C"].includes(draft.workout))current=draft.workout;
+ if(draft?.workout&&["A","B","C"].includes(draft.workout)){
+  current=draft.workout;
+ }
 }catch(e){}
 
 function clone(x){return structuredClone(x)}
+
 function loadState(){
  try{
   const raw=localStorage.getItem(STORAGE_KEY);
@@ -244,18 +257,46 @@ function loadState(){
    history:Array.isArray(s.history)?s.history:[],
    pendingSync:Array.isArray(s.pendingSync)?s.pendingSync:[]
   };
- }catch(e){return clone(DEFAULT_STATE)}
+ }catch(e){
+  return clone(DEFAULT_STATE);
+ }
 }
-function saveState(){localStorage.setItem(STORAGE_KEY,JSON.stringify(state))}
+
+function saveState(){
+ localStorage.setItem(STORAGE_KEY,JSON.stringify(state));
+}
+
 function apiUrl(){return location.origin}
-function sessionToken(){return localStorage.getItem(SESSION_KEY)||""}
-function authHeaders(){const h={"Content-Type":"application/json"};const t=sessionToken();if(t)h.Authorization="Bearer "+t;return h}
-function setSyncStatus(msg,ok=false){const el=document.getElementById("syncStatus");if(el){el.textContent=msg;el.style.color=ok?"#16845c":"#697282"}}
+
+function sessionToken(){
+ return localStorage.getItem(SESSION_KEY)||"";
+}
+
+function authHeaders(){
+ const h={"Content-Type":"application/json"};
+ const t=sessionToken();
+ if(t)h.Authorization="Bearer "+t;
+ return h;
+}
+
+function setSyncStatus(msg,ok=false){
+ const el=document.getElementById("syncStatus");
+ if(el){
+  el.textContent=msg;
+  el.style.color=ok?"#16845c":"#697282";
+ }
+}
+
 async function apiFetch(path,options={}){
- const res=await fetch(apiUrl()+path,{...options,headers:{...authHeaders(),...(options.headers||{})}});
+ const res=await fetch(apiUrl()+path,{
+  ...options,
+  headers:{...authHeaders(),...(options.headers||{})}
+ });
  const text=await res.text();
  let data=null;
- try{data=text?JSON.parse(text):null}catch(e){}
+ try{
+  data=text?JSON.parse(text):null;
+ }catch(e){}
  if(!res.ok){
   const msg=data?.error||`HTTP ${res.status}`;
   const err=new Error(msg);
@@ -265,123 +306,339 @@ async function apiFetch(path,options={}){
  }
  return data;
 }
+
 async function refreshAccount(){
- if(!sessionToken()){updateAccountUI(null);return null}
+ if(!sessionToken()){
+  updateAccountUI(null);
+  return null;
+ }
  try{
   const me=await apiFetch("/api/auth/me");
   updateAccountUI(me);
   return me;
  }catch(e){
-  if(e?.status===401){localStorage.removeItem(SESSION_KEY);updateAccountUI(null)}
+  if(e?.status===401){
+   localStorage.removeItem(SESSION_KEY);
+   updateAccountUI(null);
+  }
   return null;
  }
 }
-function updateAccountUI(me){const s=document.getElementById("accountStatus");if(s)s.textContent=me?.email?`Inloggad: ${me.email}`:"Inte inloggad";if(me?.coachProfile)showAccountPane(me);else if(me)showOnboardingPane();}
-function openAuth(){document.getElementById("authOverlay").classList.remove("hidden");refreshAccount()}
-function closeAuth(){document.getElementById("authOverlay").classList.add("hidden")}
-function showOnboardingPane(){document.getElementById("loginPane").classList.add("hidden");document.getElementById("accountPane").classList.add("hidden");document.getElementById("onboardingPane").classList.remove("hidden")}
-function showAccountPane(me){document.getElementById("loginPane").classList.add("hidden");document.getElementById("onboardingPane").classList.add("hidden");document.getElementById("accountPane").classList.remove("hidden");document.getElementById("accountEmail").textContent=me.email||"Konto";const p=me.coachProfile||{};document.getElementById("coachSummary").textContent=`Coach aktiv · ${p.goal||"mål ej angivet"} · ${p.level||"nivå ej angiven"}`}
-function showLoginPane(){document.getElementById("loginPane").classList.remove("hidden");document.getElementById("onboardingPane").classList.add("hidden");document.getElementById("accountPane").classList.add("hidden")}
+
+function updateAccountUI(me){
+ const s=document.getElementById("accountStatus");
+ if(s){
+  s.textContent=me?.email
+   ?`Inloggad: ${me.email}`
+   :"Inte inloggad";
+ }
+ if(me?.coachProfile){
+  showAccountPane(me);
+ }else if(me){
+  showOnboardingPane();
+ }
+}
+
+function openAuth(){
+ document.getElementById("authOverlay").classList.remove("hidden");
+ if(!sessionToken())showLoginPane();
+ refreshAccount();
+}
+
+function closeAuth(){
+ document.getElementById("authOverlay").classList.add("hidden");
+}
+
+function showOnboardingPane(){
+ document.getElementById("loginPane").classList.add("hidden");
+ document.getElementById("accountPane").classList.add("hidden");
+ document.getElementById("onboardingPane").classList.remove("hidden");
+}
+
+function showAccountPane(me){
+ document.getElementById("loginPane").classList.add("hidden");
+ document.getElementById("onboardingPane").classList.add("hidden");
+ document.getElementById("accountPane").classList.remove("hidden");
+ document.getElementById("accountEmail").textContent=me.email||"Konto";
+ const p=me.coachProfile||{};
+ document.getElementById("coachSummary").textContent=
+  `Coach aktiv · ${p.goal||"mål ej angivet"} · ${p.level||"nivå ej angiven"}`;
+}
+
+function showLoginPane(){
+ document.getElementById("loginPane").classList.remove("hidden");
+ document.getElementById("onboardingPane").classList.add("hidden");
+ document.getElementById("accountPane").classList.add("hidden");
+}
+
 async function emailAuth(mode){
- const email=document.getElementById("emailInput").value.trim(),password=document.getElementById("passwordInput").value;
+ const email=document.getElementById("emailInput").value.trim();
+ const password=document.getElementById("passwordInput").value;
  const msg=document.getElementById("authMessage");
- if(!email||password.length<8){msg.textContent="Ange e-post och ett lösenord på minst 8 tecken.";return}
+
+ if(!email||password.length<8){
+  msg.textContent="Ange e-post och ett lösenord på minst 8 tecken.";
+  return;
+ }
+
  try{
   msg.textContent="Arbetar…";
-  const r=await apiFetch("/api/auth/email",{method:"POST",body:JSON.stringify({mode,email,password})});
+  const r=await apiFetch("/api/auth/email",{
+   method:"POST",
+   body:JSON.stringify({mode,email,password})
+  });
   if(!r?.token)throw new Error("Ingen session kunde skapas.");
   localStorage.setItem(SESSION_KEY,r.token);
   msg.textContent="";
   await refreshAccount();
   await pullRemote();
  }catch(e){
-  msg.textContent=(mode==="register"?"Kunde inte skapa kontot: ":"Kunde inte logga in: ")+e.message;
+  msg.textContent=
+   (mode==="register"?"Kunde inte skapa kontot: ":"Kunde inte logga in: ")+e.message;
  }
 }
-function providerLogin(provider){document.getElementById("authMessage").textContent=`${provider==="google"?"Google":"Apple"}-inloggning behöver konfigureras på DoNext-servern innan den kan användas.`}
-async function saveCoachProfile(){try{const profile={goal:document.getElementById("coachGoal").value,level:document.getElementById("coachLevel").value,frequency:document.getElementById("coachFrequency").value.trim(),duration:document.getElementById("coachDuration").value.trim(),constraints:document.getElementById("coachConstraints").value.trim()};const me=await apiFetch("/api/auth/coach",{method:"PUT",body:JSON.stringify(profile)});showAccountPane(me);await pullRemote()}catch(e){alert("Kunde inte spara coachprofilen: "+e.message)}}
-async function revokeCoachAccess(){if(!confirm("Återkalla GPT-coachens åtkomst till ditt konto?"))return;try{await apiFetch("/api/auth/revoke-coach",{method:"POST"});alert("GPT-coachens åtkomst har återkallats.")}catch(e){alert("Kunde inte återkalla åtkomst. Försök igen.")}}
-async function logout(){try{await apiFetch("/api/auth/logout",{method:"POST"})}catch(e){}localStorage.removeItem(SESSION_KEY);showLoginPane();updateAccountUI(null);setSyncStatus("Inte ansluten")}
-async function resetTestAccount(){if(!confirm("Återställ testkontots coach och träningsdata?"))return;try{await apiFetch("/api/auth/reset",{method:"POST"});state=clone(DEFAULT_STATE);current="A";localStorage.setItem(STORAGE_KEY,JSON.stringify(state));clearDraft();showOnboardingPane();render()}catch(e){alert("Kunde inte återställa testkontot: "+e.message)}}
+
+function providerLogin(provider){
+ document.getElementById("authMessage").textContent=
+  `${provider==="google"?"Google":"Apple"}-inloggning behöver konfigureras på DoNext-servern innan den kan användas.`;
+}
+
+async function saveCoachProfile(){
+ try{
+  const profile={
+   goal:document.getElementById("coachGoal").value,
+   level:document.getElementById("coachLevel").value,
+   frequency:document.getElementById("coachFrequency").value.trim(),
+   duration:document.getElementById("coachDuration").value.trim(),
+   constraints:document.getElementById("coachConstraints").value.trim()
+  };
+  const me=await apiFetch("/api/auth/coach",{
+   method:"PUT",
+   body:JSON.stringify(profile)
+  });
+  showAccountPane(me);
+  await pullRemote();
+ }catch(e){
+  alert("Kunde inte spara coachprofilen: "+e.message);
+ }
+}
+
+async function revokeCoachAccess(){
+ if(!confirm("Återkalla GPT-coachens åtkomst till ditt konto?"))return;
+ try{
+  await apiFetch("/api/auth/revoke-coach",{method:"POST"});
+  alert("GPT-coachens åtkomst har återkallats.");
+ }catch(e){
+  alert("Kunde inte återkalla åtkomst. Försök igen.");
+ }
+}
+
+async function logout(){
+ try{
+  await apiFetch("/api/auth/logout",{method:"POST"});
+ }catch(e){}
+ localStorage.removeItem(SESSION_KEY);
+ showLoginPane();
+ updateAccountUI(null);
+ setSyncStatus("Inte ansluten");
+}
+
+async function resetTestAccount(){
+ if(!confirm("Återställ testkontots coach och träningsdata?"))return;
+ try{
+  await apiFetch("/api/auth/reset",{method:"POST"});
+  state=clone(DEFAULT_STATE);
+  current="A";
+  localStorage.setItem(STORAGE_KEY,JSON.stringify(state));
+  clearDraft();
+  showOnboardingPane();
+  render();
+ }catch(e){
+  alert("Kunde inte återställa testkontot: "+e.message);
+ }
+}
+
 function mergeHistory(localHistory,remoteHistory){
  const map=new Map();
- for(const item of (remoteHistory||[]))if(item?.id)map.set(item.id,item);
- for(const item of (localHistory||[]))if(item?.id)map.set(item.id,item);
- return [...map.values()].sort((a,b)=>new Date(a.date)-new Date(b.date));
+ for(const item of (remoteHistory||[])){
+  if(item?.id)map.set(item.id,item);
+ }
+ for(const item of (localHistory||[])){
+  if(item?.id)map.set(item.id,item);
+ }
+ return [...map.values()].sort(
+  (a,b)=>new Date(a.date)-new Date(b.date)
+ );
 }
+
 async function pullRemote(){
- if(!sessionToken()){setSyncStatus("Inte ansluten");return false}
+ if(!sessionToken()){
+  setSyncStatus("Inte ansluten");
+  return false;
+ }
  if(syncBusy)return false;
  syncBusy=true;
+
  try{
   setSyncStatus("Synkar…");
+
   const remote=await apiFetch("/api/state");
-  const pendingIds=new Set((state.pendingSync||[]).map(x=>x.id));
-  const remoteHistory=Array.isArray(remote?.history)?remote.history:[];
+  const remoteHistory=Array.isArray(remote?.history)
+   ?remote.history:[];
+
   state.history=mergeHistory(state.history,remoteHistory);
 
-  // Merge each workout slot independently. Never replace a populated local slot
-  // with an empty server slot (the API may legitimately return only a partially
-  // configured program during setup).
-  if(remote?.program&&pendingIds.size===0){
-   const mergedProgram={...clone(DEFAULT_PROGRAM),...state.program};
+  if(remote?.program){
    for(const w of ["A","B","C"]){
-    if(Array.isArray(remote.program[w])&&remote.program[w].length>0)mergedProgram[w]=remote.program[w];
+    if(Array.isArray(remote.program[w])&&
+       remote.program[w].length>0){
+     state.program[w]=remote.program[w];
+    }
    }
-   state.program=mergedProgram;
   }
 
-  // Local progress must win while workouts are waiting to sync.
-  if(pendingIds.size===0){
-   if(Number.isFinite(remote?.sessions))state.sessions=Math.max(Number(state.sessions||0),Number(remote.sessions));
-   if(remote?.nextWorkout)state.next=remote.nextWorkout;
+  if(Number.isFinite(remote?.sessions)){
+   state.sessions=Math.max(
+    Number(state.sessions||0),
+    Number(remote.sessions),
+    state.history.length
+   );
+  }
+
+  if(remote?.nextWorkout&&!(state.pendingSync||[]).length){
+   state.next=remote.nextWorkout;
   }
 
   saveState();
+
+  await syncPendingWorkouts();
+
+  if((state.pendingSync||[]).length){
+   setSyncStatus("Lokal data · väntar på synkning");
+   return false;
+  }
+
+  const afterQueue=await apiFetch("/api/state");
+  const serverIds=new Set(
+   (Array.isArray(afterQueue?.history)
+    ?afterQueue.history:[])
+    .map(x=>x?.id)
+    .filter(Boolean)
+  );
+
+  const missingLocal=state.history.some(
+   x=>x?.id&&!serverIds.has(x.id)
+  );
+
+  const missingProgram=["A","B","C"].some(w=>
+   Array.isArray(state.program[w])&&
+   state.program[w].length>0&&
+   (!Array.isArray(afterQueue?.program?.[w])||
+    afterQueue.program[w].length===0)
+  );
+
+  if(missingLocal||missingProgram){
+   const combined=mergeHistory(
+    state.history,
+    Array.isArray(afterQueue?.history)
+     ?afterQueue.history:[]
+   );
+
+   await apiFetch("/api/state",{
+    method:"PUT",
+    body:JSON.stringify({
+     program:{...state.program},
+     nextWorkout:state.next,
+     sessions:Math.max(
+      Number(state.sessions||0),
+      combined.length
+     ),
+     history:combined
+    })
+   });
+  }
+
+  const confirmed=await apiFetch("/api/state");
+
+  const confirmedIds=new Set(
+   (Array.isArray(confirmed?.history)
+    ?confirmed.history:[])
+    .map(x=>x?.id)
+    .filter(Boolean)
+  );
+
+  const historyVerified=state.history.every(
+   x=>x?.id&&confirmedIds.has(x.id)
+  );
+
+  const programVerified=["A","B","C"].every(w=>
+   !Array.isArray(state.program[w])||
+   !state.program[w].length||
+   (Array.isArray(confirmed?.program?.[w])&&
+    confirmed.program[w].length>0)
+  );
+
+  if(!historyVerified||!programVerified){
+   setSyncStatus("Synkning ej bekräftad");
+   return false;
+  }
+
+  state.history=mergeHistory(
+   state.history,
+   confirmed.history
+  );
+
+  if(Number.isFinite(confirmed.sessions)){
+   state.sessions=Math.max(
+    state.sessions,
+    confirmed.sessions
+   );
+  }
+
+  if(confirmed.nextWorkout){
+   state.next=confirmed.nextWorkout;
+  }
+
+  saveState();
+
   if(!workoutDirty){
    current=state.next;
    render();
   }
 
-  // Upload locally queued workouts before considering the device fully synced.
-  const uploaded=await syncPendingWorkouts();
-  if(uploaded && (state.pendingSync||[]).length===0){
-   // Pull once more so the device reflects the confirmed server state.
-   const confirmed=await apiFetch("/api/state");
-   state.history=mergeHistory(state.history,Array.isArray(confirmed?.history)?confirmed.history:[]);
-   if(confirmed?.program){
-    const mergedProgram={...clone(DEFAULT_PROGRAM),...state.program};
-    for(const w of ["A","B","C"]){
-     if(Array.isArray(confirmed.program[w])&&confirmed.program[w].length>0)mergedProgram[w]=confirmed.program[w];
-    }
-    state.program=mergedProgram;
-   }
-   if(Number.isFinite(confirmed?.sessions))state.sessions=Math.max(Number(state.sessions||0),Number(confirmed.sessions));
-   if(confirmed?.nextWorkout)state.next=confirmed.nextWorkout;
-   if(!workoutDirty){
-    current=state.next;
-    saveState();
-    render();
-   }else{
-    saveState();
-   }
-  }
-  if((state.pendingSync||[]).length){setSyncStatus("Lokal data · väntar på synkning");return false}
   setSyncStatus("Synkad ✓",true);
   return true;
+
  }catch(e){
-  setSyncStatus((state.pendingSync||[]).length?"Lokal data · väntar på synkning":"Lokal data (API ej nåbar)");
+  if(e?.status===401){
+   localStorage.removeItem(SESSION_KEY);
+   updateAccountUI(null);
+   setSyncStatus("Sessionen har gått ut – logga in igen");
+  }else{
+   setSyncStatus("Synkning misslyckades: "+e.message);
+  }
   return false;
- }finally{syncBusy=false}
+ }finally{
+  syncBusy=false;
+ }
 }
+
 async function syncPendingWorkouts(){
- if(!sessionToken()||(state.pendingSync||[]).length===0)return false;
+ if(!sessionToken()||(state.pendingSync||[]).length===0){
+  return false;
+ }
  let uploadedAny=false;
  const queue=[...state.pendingSync];
+
  for(const session of queue){
   try{
-   await apiFetch("/api/workout",{method:"POST",body:JSON.stringify(session)});
-   state.pendingSync=state.pendingSync.filter(x=>x.id!==session.id);
+   await apiFetch("/api/workout",{
+    method:"POST",
+    body:JSON.stringify(session)
+   });
+   state.pendingSync=state.pendingSync.filter(
+    x=>x.id!==session.id
+   );
    saveState();
    uploadedAny=true;
   }catch(e){
@@ -390,72 +647,143 @@ async function syncPendingWorkouts(){
  }
  return uploadedAny;
 }
+
 async function pushRemoteState(){
- // Kept for compatibility with V2.10; state-changing workout data uses the
- // idempotent /api/workout queue instead of replacing the entire remote state.
  if(!sessionToken())return false;
  try{
   setSyncStatus("Sparar…");
-  await apiFetch("/api/state",{method:"PUT",body:JSON.stringify({
-   program:state.program,nextWorkout:state.next,sessions:state.sessions,history:state.history
-  })});
+  await apiFetch("/api/state",{
+   method:"PUT",
+   body:JSON.stringify({
+    program:state.program,
+    nextWorkout:state.next,
+    sessions:state.sessions,
+    history:state.history
+   })
+  });
   setSyncStatus("Synkad ✓",true);
   return true;
- }catch(e){setSyncStatus("Sparat lokalt – API ej nåbar");return false}
+ }catch(e){
+  setSyncStatus("Sparat lokalt – API ej nåbar");
+  return false;
+ }
 }
+
 async function sendWorkoutToRemote(session){
  if(!sessionToken())return false;
  try{
-  await apiFetch("/api/workout",{method:"POST",body:JSON.stringify(session)});
-  state.pendingSync=state.pendingSync.filter(x=>x.id!==session.id);
+  await apiFetch("/api/workout",{
+   method:"POST",
+   body:JSON.stringify(session)
+  });
+  state.pendingSync=state.pendingSync.filter(
+   x=>x.id!==session.id
+  );
   saveState();
   return true;
- }catch(e){return false}
+ }catch(e){
+  return false;
+ }
 }
+
 function queueWorkout(session){
- if(!state.pendingSync.some(x=>x.id===session.id))state.pendingSync.push(session);
+ if(!state.pendingSync.some(x=>x.id===session.id)){
+  state.pendingSync.push(session);
+ }
  saveState();
 }
-function exerciseId(name){return name.trim().toLowerCase()}
+
+function exerciseId(name){
+ return name.trim().toLowerCase();
+}
+
 function previousFor(name){
  const id=exerciseId(name);
  for(let s=state.history.length-1;s>=0;s--){
-  const hit=state.history[s].exercises?.find(x=>x.exerciseId===id);
+  const hit=state.history[s].exercises?.find(
+   x=>x.exerciseId===id
+  );
   if(hit)return hit;
  }
  return null;
 }
+
 function actualWeightOf(entry){
  const raw=entry?.actualWeight??entry?.weight;
  const n=Number(raw);
  return Number.isFinite(n)?n:null;
 }
+
 function parseWeight(value){
- const n=Number(String(value??"").trim().replace(",","."));
+ const n=Number(
+  String(value??"").trim().replace(",",".")
+ );
  return Number.isFinite(n)&&n>0?n:null;
 }
+
 function suggestion(ex,base,unit,range){
- const h=previousFor(ex), parts=range.split("–").map(Number), lo=parts[0], hi=parts[1];
- if(!h)return {weight:base,reps:lo,reason:"Startvärde"};
+ const h=previousFor(ex);
+ const parts=range.split("–").map(Number);
+ const lo=parts[0],hi=parts[1];
+
+ if(!h){
+  return {weight:base,reps:lo,reason:"Startvärde"};
+ }
+
  const avg=h.reps.reduce((a,b)=>a+b,0)/h.reps.length;
+
  if(avg>=hi){
   const previousWeight=actualWeightOf(h)??base;
   const inc=unit==="platta"?1:(previousWeight>=30?2.5:1);
-  return {weight:Number((previousWeight+inc).toFixed(1)),reps:lo,reason:"Öka vikten"};
+  return {
+   weight:Number((previousWeight+inc).toFixed(1)),
+   reps:lo,
+   reason:"Öka vikten"
+  };
  }
- return {weight:actualWeightOf(h)??base,reps:Math.min(hi,Math.max(lo,Math.round(avg)+1)),reason:"Bygg reps"};
+
+ return {
+  weight:actualWeightOf(h)??base,
+  reps:Math.min(hi,Math.max(lo,Math.round(avg)+1)),
+  reason:"Bygg reps"
+ };
 }
+
 function esc(v){
- return String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
+ return String(v??"").replace(
+  /[&<>"']/g,
+  m=>({
+   "&":"&amp;",
+   "<":"&lt;",
+   ">":"&gt;",
+   '"':"&quot;",
+   "'":"&#39;"
+  }[m])
+ );
 }
+
 function render(){
- document.getElementById("date").textContent=new Date().toLocaleDateString("sv-SE",{weekday:"long",year:"numeric",month:"long",day:"numeric"});
+ document.getElementById("date").textContent=
+  new Date().toLocaleDateString("sv-SE",{
+   weekday:"long",
+   year:"numeric",
+   month:"long",
+   day:"numeric"
+  });
+
  const list=state.program[current]||[];
- document.getElementById("count").textContent=(state.sessions+1)+" · "+list.length+" övningar";
+ document.getElementById("count").textContent=
+  (state.sessions+1)+" · "+list.length+" övningar";
+
  document.getElementById("workout").innerHTML=list.map((e,i)=>{
-  const [ex,base,unit,sets,range]=e,sug=suggestion(ex,base,unit,range),h=previousFor(ex);
-  const prev=h?`${h.weight} ${h.unit} · ${h.reps.join("/")}`:"Ingen historik";
+  const [ex,base,unit,sets,range]=e;
+  const sug=suggestion(ex,base,unit,range);
+  const h=previousFor(ex);
+  const prev=h
+   ?`${h.weight} ${h.unit} · ${h.reps.join("/")}`
+   :"Ingen historik";
   const unitLabel=unit==="kg/hantel"?"Vikt / hantel":unit;
+
   return `<div class="card exercise">
    <div class="row between"><h3>${esc(ex)}</h3><span class="badge">${sets} set</span></div>
    <div class="last">Senast: ${esc(prev)}</div>
@@ -463,187 +791,481 @@ function render(){
    <div class="weight-row"><label class="weight-label" for="wt-${i}">Vikt</label><input class="actual-weight" id="wt-${i}" inputmode="decimal" type="number" step="0.5" value="${esc(sug.weight)}" aria-label="Vikt"><span>${esc(unitLabel)}</span></div>
    <div class="inputs">${Array.from({length:sets},(_,j)=>`<input inputmode="decimal" type="number" placeholder="Set ${j+1}" id="r-${i}-${j}">`).join("")}</div>
    <input id="w-${i}" placeholder="Kommentar / obehag (valfritt)">
-  </div>`;
+   </div>`;
  }).join("");
- restoreDraft(); updateBar(); updateStats();
+
+ restoreDraft();
+ updateBar();
+ updateStats();
 }
+
 function updateBar(){
  const total=(state.program[current]||[]).length;
  let done=0;
- for(let i=0;i<total;i++)if([...document.querySelectorAll(`[id^="r-${i}-"]`)].some(x=>x.value))done++;
+
+ for(let i=0;i<total;i++){
+  if([...document.querySelectorAll(`[id^="r-${i}-"]`)]
+   .some(x=>x.value))done++;
+ }
+
  const pct=total?Math.round(done/total*100):0;
  document.getElementById("bar").style.width=pct+"%";
  document.getElementById("percent").textContent=pct+"%";
 }
-document.addEventListener("input",e=>{if(e.target.closest("#workout")){workoutDirty=true;saveDraft();updateBar()}});
+
+document.addEventListener("input",e=>{
+ if(e.target.closest("#workout")){
+  workoutDirty=true;
+  saveDraft();
+  updateBar();
+ }
+});
+
 function saveDraft(){
  const values={};
- document.querySelectorAll("#workout input[id^=\"r-\"],#workout input[id^=\"w-\"],#workout input[id^=\"wt-\"]").forEach(x=>{if(x.value!=="")values[x.id]=x.value});
+
+ document.querySelectorAll(
+  '#workout input[id^="r-"],#workout input[id^="w-"],#workout input[id^="wt-"]'
+ ).forEach(x=>{
+  if(x.value!=="")values[x.id]=x.value;
+ });
+
  const note=document.getElementById("sessionNote")?.value||"";
- if(!Object.keys(values).length&&!note){localStorage.removeItem(DRAFT_KEY);return}
- localStorage.setItem(DRAFT_KEY,JSON.stringify({workout:current,values,note,savedAt:new Date().toISOString()}));
+
+ if(!Object.keys(values).length&&!note){
+  localStorage.removeItem(DRAFT_KEY);
+  return;
+ }
+
+ localStorage.setItem(DRAFT_KEY,JSON.stringify({
+  workout:current,
+  values,
+  note,
+  savedAt:new Date().toISOString()
+ }));
 }
+
 function restoreDraft(){
  try{
-  const draft=JSON.parse(localStorage.getItem(DRAFT_KEY)||"null");
+  const draft=JSON.parse(
+   localStorage.getItem(DRAFT_KEY)||"null"
+  );
   if(!draft||draft.workout!==current)return;
-  Object.entries(draft.values||{}).forEach(([id,value])=>{const el=document.getElementById(id);if(el)el.value=value});
+
+  Object.entries(draft.values||{}).forEach(([id,value])=>{
+   const el=document.getElementById(id);
+   if(el)el.value=value;
+  });
+
   const note=document.getElementById("sessionNote");
   if(note&&draft.note)note.value=draft.note;
-  if(Object.keys(draft.values||{}).length||draft.note)workoutDirty=true;
+
+  if(Object.keys(draft.values||{}).length||draft.note){
+   workoutDirty=true;
+  }
  }catch(e){}
 }
-function clearDraft(){localStorage.removeItem(DRAFT_KEY)}
+
+function clearDraft(){
+ localStorage.removeItem(DRAFT_KEY);
+}
+
 function clearInputs(){
- document.querySelectorAll("#workout input").forEach(x=>x.value="");
+ document.querySelectorAll("#workout input").forEach(
+  x=>x.value=""
+ );
  document.getElementById("sessionNote").value="";
  clearDraft();
  workoutDirty=false;
  updateBar();
 }
+
 async function saveWorkout(){
  const exercises=[];
  const list=state.program[current]||[];
+
  list.forEach((e,i)=>{
   const [ex,base,unit,sets,range]=e;
-  const reps=[...document.querySelectorAll(`[id^="r-${i}-"]`)].map(x=>Number(x.value)).filter(x=>x>0);
+  const reps=[
+   ...document.querySelectorAll(`[id^="r-${i}-"]`)
+  ].map(x=>Number(x.value)).filter(x=>x>0);
+
   if(!reps.length)return;
-  const h=previousFor(ex),sug=suggestion(ex,base,unit,range);
-  const actualWeight=parseWeight(document.getElementById(`wt-${i}`).value);
+
+  const sug=suggestion(ex,base,unit,range);
+  const actualWeight=parseWeight(
+   document.getElementById(`wt-${i}`).value
+  );
   const weight=actualWeight??sug.weight;
-  exercises.push({exerciseId:exerciseId(ex),exercise:ex,weight,actualWeight:weight,recommendedWeight:sug.weight,unit,reps,setsCompleted:reps.length,targetRange:range,comment:document.getElementById(`w-${i}`).value.trim()});
+
+  exercises.push({
+   exerciseId:exerciseId(ex),
+   exercise:ex,
+   weight,
+   actualWeight:weight,
+   recommendedWeight:sug.weight,
+   unit,
+   reps,
+   setsCompleted:reps.length,
+   targetRange:range,
+   comment:document.getElementById(`w-${i}`).value.trim()
+  });
  });
- if(!exercises.length){alert("Fyll i minst en övning först.");return}
- const session={id:(crypto.randomUUID?crypto.randomUUID():String(Date.now())),date:new Date().toISOString(),workout:current,sessionComment:document.getElementById("sessionNote").value.trim(),exercises};
+
+ if(!exercises.length){
+  alert("Fyll i minst en övning först.");
+  return;
+ }
+
+ const session={
+  id:crypto.randomUUID
+   ?crypto.randomUUID():String(Date.now()),
+  date:new Date().toISOString(),
+  workout:current,
+  sessionComment:document.getElementById("sessionNote").value.trim(),
+  exercises
+ };
+
  state.history.push(session);
  state.sessions++;
  state.next=current==="A"?"B":current==="B"?"C":"A";
+
  queueWorkout(session);
  clearDraft();
  workoutDirty=false;
  current=state.next;
  render();
- showView("today",document.querySelector('[data-view="today"]'));
+
+ showView(
+  "today",
+  document.querySelector('[data-view="today"]')
+ );
+
  const synced=await sendWorkoutToRemote(session);
- if(synced)setSyncStatus("Synkad ✓",true);
- else setSyncStatus("Sparat lokalt – väntar på synkning");
- alert(synced?"Pass sparat och synkat!":"Pass sparat lokalt – synkas när anslutningen är tillbaka.");
+
+ if(synced){
+  setSyncStatus("Synkad ✓",true);
+ }else{
+  setSyncStatus("Sparat lokalt – väntar på synkning");
+ }
+
+ alert(synced
+  ?"Pass sparat och synkat!"
+  :"Pass sparat lokalt – synkas när anslutningen är tillbaka.");
 }
+
 function showView(id,btn){
- document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
+ document.querySelectorAll(".view").forEach(
+  v=>v.classList.remove("active")
+ );
  document.getElementById(id).classList.add("active");
- document.querySelectorAll(".nav-btn").forEach(x=>x.classList.remove("active"));
+
+ document.querySelectorAll(".nav-btn").forEach(
+  x=>x.classList.remove("active")
+ );
+
  if(btn)btn.classList.add("active");
- if(id==="historyView"){hideHistoryDetail();renderHistory();}
+
+ if(id==="historyView"){
+  hideHistoryDetail();
+  renderHistory();
+ }
  if(id==="statsView")updateStats();
 }
+
 function renderHistory(){
- const list=[...state.history].sort((a,b)=>new Date(b.date)-new Date(a.date));
- const listEl=document.getElementById("historyList"),detailEl=document.getElementById("historyDetail");
+ const list=[...state.history].sort(
+  (a,b)=>new Date(b.date)-new Date(a.date)
+ );
+
+ const listEl=document.getElementById("historyList");
+ const detailEl=document.getElementById("historyDetail");
+
  if(detailEl&&!detailEl.classList.contains("hidden"))return;
+
  listEl.innerHTML=list.length?list.map(s=>{
-  const totalSets=s.exercises.reduce((n,e)=>n+(e.setsCompleted||e.reps?.length||0),0);
-  const pending=(state.pendingSync||[]).some(x=>x.id===s.id);
+  const totalSets=s.exercises.reduce(
+   (n,e)=>n+(e.setsCompleted||e.reps?.length||0),0
+  );
+  const pending=(state.pendingSync||[]).some(
+   x=>x.id===s.id
+  );
+
   return `<div class="history-row clickable" role="button" tabindex="0" onclick="showHistoryDetail('${esc(s.id)}')" onkeydown="if(event.key==='Enter'||event.key===' ')showHistoryDetail('${esc(s.id)}')"><div class="row between"><div><strong>Pass ${esc(s.workout)} · ${new Date(s.date).toLocaleDateString("sv-SE")}</strong><small>${s.exercises.length} övningar · ${totalSets} set${s.enteredAfterward?" · efterregistrerat":""}${pending?" · väntar på synkning":""}</small>${s.sessionComment?`<small>${esc(s.sessionComment)}</small>`:""}</div><span class="history-chevron" aria-hidden="true">›</span></div></div>`;
- }).join(""):"<div class='empty'>Ingen träning registrerad ännu.</div>";
+ }).join("")
+  :"<div class='empty'>Ingen träning registrerad ännu.</div>";
 }
+
 function showHistoryDetail(id){
  const session=state.history.find(s=>s.id===id);
  if(!session)return;
- const detail=document.getElementById("historyDetail"),list=document.getElementById("historyList");
+
+ const detail=document.getElementById("historyDetail");
+ const list=document.getElementById("historyList");
  if(!detail||!list)return;
- const totalSets=session.exercises.reduce((n,e)=>n+(e.setsCompleted||e.reps?.length||0),0);
- detail.innerHTML=`<div class="detail-head"><button class="detail-back" onclick="hideHistoryDetail()">‹ Historik</button><div><div class="detail-title">Pass ${esc(session.workout)}</div><div class="detail-meta">${new Date(session.date).toLocaleDateString("sv-SE",{weekday:"long",year:"numeric",month:"long",day:"numeric"})} · ${session.exercises.length} övningar · ${totalSets} set</div></div></div>${session.exercises.map(e=>{
-  const weight=actualWeightOf(e);
-  const reps=Array.isArray(e.reps)?e.reps:[];
-  const setText=reps.length?reps.map((r,i)=>"<div class=\"detail-set\">Set "+(i+1)+": "+esc(r)+" reps</div>").join(""):"<div class=\"detail-muted\">Inga reps registrerade</div>";
-  return `<div class="detail-exercise"><h3>${esc(e.exercise)}</h3><div class="detail-line">Vikt: ${weight===null?"–":esc(weight)} ${esc(e.unit||"")}</div><div class="detail-setgrid">${setText}</div>${e.targetRange?`<div class="detail-line detail-muted">Mål: ${esc(e.targetRange)} reps</div>`:""}${e.recommendedWeight!==undefined?`<div class="detail-line detail-muted">Rekommenderat: ${esc(e.recommendedWeight)} ${esc(e.unit||"")}</div>`:""}${e.comment?`<div class="detail-note">${esc(e.comment)}</div>`:""}</div>`;
- }).join("")}${session.sessionComment?`<div class="detail-note"><strong>Passkommentar</strong><br>${esc(session.sessionComment)}</div>`:""}`;
+
+ const totalSets=session.exercises.reduce(
+  (n,e)=>n+(e.setsCompleted||e.reps?.length||0),0
+ );
+
+ detail.innerHTML=
+  `<div class="detail-head"><button class="detail-back" onclick="hideHistoryDetail()">‹ Historik</button><div><div class="detail-title">Pass ${esc(session.workout)}</div><div class="detail-meta">${new Date(session.date).toLocaleDateString("sv-SE",{weekday:"long",year:"numeric",month:"long",day:"numeric"})} · ${session.exercises.length} övningar · ${totalSets} set</div></div></div>`+
+  session.exercises.map(e=>{
+   const weight=actualWeightOf(e);
+   const reps=Array.isArray(e.reps)?e.reps:[];
+   const setText=reps.length
+    ?reps.map((r,i)=>
+      `<div class="detail-set">Set ${i+1}: ${esc(r)} reps</div>`
+     ).join("")
+    :'<div class="detail-muted">Inga reps registrerade</div>';
+
+   return `<div class="detail-exercise"><h3>${esc(e.exercise)}</h3><div class="detail-line">Vikt: ${weight===null?"–":esc(weight)} ${esc(e.unit||"")}</div><div class="detail-setgrid">${setText}</div>${e.targetRange?`<div class="detail-line detail-muted">Mål: ${esc(e.targetRange)} reps</div>`:""}${e.recommendedWeight!==undefined?`<div class="detail-line detail-muted">Rekommenderat: ${esc(e.recommendedWeight)} ${esc(e.unit||"")}</div>`:""}${e.comment?`<div class="detail-note">${esc(e.comment)}</div>`:""}</div>`;
+  }).join("")+
+  (session.sessionComment
+   ?`<div class="detail-note"><strong>Passkommentar</strong>${esc(session.sessionComment)}</div>`
+   :"");
+
  list.classList.add("hidden");
  detail.classList.remove("hidden");
  detail.scrollIntoView({behavior:"smooth",block:"start"});
 }
+
 function hideHistoryDetail(){
- const detail=document.getElementById("historyDetail"),list=document.getElementById("historyList");
+ const detail=document.getElementById("historyDetail");
+ const list=document.getElementById("historyList");
  if(!detail||!list)return;
  detail.classList.add("hidden");
  list.classList.remove("hidden");
 }
+
 function updateStats(){
- document.getElementById("statSessions").textContent=state.history.length;
- document.getElementById("statExercises").textContent=state.history.reduce((n,s)=>n+s.exercises.length,0);
- document.getElementById("statSets").textContent=state.history.reduce((n,s)=>n+s.exercises.reduce((a,e)=>a+(e.setsCompleted||e.reps?.length||0),0),0);
- document.getElementById("statDays").textContent=new Set(state.history.map(s=>String(s.date).slice(0,10))).size;
+ document.getElementById("statSessions").textContent=
+  state.history.length;
+
+ document.getElementById("statExercises").textContent=
+  state.history.reduce(
+   (n,s)=>n+s.exercises.length,0
+  );
+
+ document.getElementById("statSets").textContent=
+  state.history.reduce(
+   (n,s)=>n+s.exercises.reduce(
+    (a,e)=>a+(e.setsCompleted||e.reps?.length||0),0
+   ),0
+  );
+
+ document.getElementById("statDays").textContent=
+  new Set(
+   state.history.map(s=>String(s.date).slice(0,10))
+  ).size;
+
  const latest={};
- state.history.forEach(s=>s.exercises.forEach(e=>{latest[e.exerciseId]=e}));
+
+ state.history.forEach(s=>
+  s.exercises.forEach(e=>{
+   latest[e.exerciseId]=e;
+  })
+ );
+
  const rows=Object.values(latest);
- document.getElementById("progressList").innerHTML=rows.length?rows.map(e=>`<div class="history-row"><strong>${esc(e.exercise)}</strong><small>${esc(actualWeightOf(e)??e.weight)} ${esc(e.unit)} · ${esc(e.reps.join("/"))}</small></div>`).join(""):"Ingen data ännu.";
+
+ document.getElementById("progressList").innerHTML=
+  rows.length
+   ?rows.map(e=>
+    `<div class="history-row"><strong>${esc(e.exercise)}</strong><small>${esc(actualWeightOf(e)??e.weight)} ${esc(e.unit)} · ${esc(e.reps.join("/"))}</small></div>`
+   ).join("")
+   :"Ingen data ännu.";
 }
-function localDateInputValue(date){return new Date(date).toLocaleDateString("sv-SE",{year:"numeric",month:"2-digit",day:"2-digit"}).split("-").reverse().join("-")}
+
+function localDateInputValue(date){
+ return new Date(date).toLocaleDateString("sv-SE",{
+  year:"numeric",
+  month:"2-digit",
+  day:"2-digit"
+ }).split("-").reverse().join("-");
+}
+
 function togglePastWorkout(){
  const f=document.getElementById("pastWorkoutForm");
  f.classList.toggle("hidden");
+
  if(!f.classList.contains("hidden")){
-  document.getElementById("pastDate").value=localDateInputValue(new Date());
+  document.getElementById("pastDate").value=
+   localDateInputValue(new Date());
   renderPastExercises();
  }
 }
-document.getElementById("pastWorkout")?.addEventListener("change",renderPastExercises);
+
+document.getElementById("pastWorkout")
+ ?.addEventListener("change",renderPastExercises);
+
 function renderPastExercises(){
- const workout=document.getElementById("pastWorkout").value,list=state.program[workout]||[];
- document.getElementById("pastExercises").innerHTML=list.map((e,i)=>{
-  const [ex,base,unit,sets,range]=e,h=previousFor(ex),sug=suggestion(ex,base,unit,range);
-  return `<div class="card exercise">
-   <h3>${esc(ex)}</h3>
-   <div class="last">Förslag: ${esc(sug.weight)} ${esc(unit)} · ${esc(sug.reps)} reps</div>
-   <label class="weight-label" for="past-w-${i}">Faktisk vikt</label>
-   <input id="past-w-${i}" inputmode="decimal" placeholder="Vikt${unit==="platta"?" / platta":" (kg)"}" value="${h?esc(actualWeightOf(h)??""):""}">
-   <div class="inputs">${Array.from({length:sets},(_,j)=>`<input inputmode="decimal" type="number" placeholder="Set ${j+1}" id="past-r-${i}-${j}">`).join("")}</div>
-   <input id="past-c-${i}" placeholder="Kommentar / obehag (valfritt)">
-  </div>`;
- }).join("");
+ const workout=document.getElementById("pastWorkout").value;
+ const list=state.program[workout]||[];
+
+ document.getElementById("pastExercises").innerHTML=
+  list.map((e,i)=>{
+   const [ex,base,unit,sets,range]=e;
+   const h=previousFor(ex);
+   const sug=suggestion(ex,base,unit,range);
+
+   return `<div class="card exercise">
+    <h3>${esc(ex)}</h3>
+    <div class="last">Förslag: ${esc(sug.weight)} ${esc(unit)} · ${esc(sug.reps)} reps</div>
+    <label class="weight-label" for="past-w-${i}">Faktisk vikt</label>
+    <input id="past-w-${i}" inputmode="decimal" placeholder="Vikt${unit==="platta"?" / platta":" (kg)"}" value="${h?esc(actualWeightOf(h)??""):""}">
+    <div class="inputs">${Array.from({length:sets},(_,j)=>`<input inputmode="decimal" type="number" placeholder="Set ${j+1}" id="past-r-${i}-${j}">`).join("")}</div>
+    <input id="past-c-${i}" placeholder="Kommentar / obehag (valfritt)">
+    </div>`;
+  }).join("");
 }
+
 async function savePastWorkout(){
- const dateValue=document.getElementById("pastDate").value,workout=document.getElementById("pastWorkout").value,list=state.program[workout]||[];
- if(!dateValue){alert("Välj datum.");return}
+ const dateValue=document.getElementById("pastDate").value;
+ const workout=document.getElementById("pastWorkout").value;
+ const list=state.program[workout]||[];
+
+ if(!dateValue){
+  alert("Välj datum.");
+  return;
+ }
+
  const exercises=[];
+
  list.forEach((e,i)=>{
   const [ex,base,unit,sets,range]=e;
-  const reps=[...document.querySelectorAll(`[id^="past-r-${i}-"]`)].map(x=>Number(x.value)).filter(x=>x>0);
+  const reps=[
+   ...document.querySelectorAll(`[id^="past-r-${i}-"]`)
+  ].map(x=>Number(x.value)).filter(x=>x>0);
+
   if(!reps.length)return;
-  const raw=document.getElementById(`past-w-${i}`).value.trim(),h=previousFor(ex),sug=suggestion(ex,base,unit,range);
-  const parsed=parseWeight(raw),weight=parsed??(actualWeightOf(h)??sug.weight);
-  exercises.push({exerciseId:exerciseId(ex),exercise:ex,weight,actualWeight:weight,recommendedWeight:sug.weight,unit,reps,setsCompleted:reps.length,targetRange:range,comment:document.getElementById(`past-c-${i}`).value.trim()});
+
+  const raw=document.getElementById(`past-w-${i}`).value.trim();
+  const h=previousFor(ex);
+  const sug=suggestion(ex,base,unit,range);
+  const parsed=parseWeight(raw);
+  const weight=parsed??(actualWeightOf(h)??sug.weight);
+
+  exercises.push({
+   exerciseId:exerciseId(ex),
+   exercise:ex,
+   weight,
+   actualWeight:weight,
+   recommendedWeight:sug.weight,
+   unit,
+   reps,
+   setsCompleted:reps.length,
+   targetRange:range,
+   comment:document.getElementById(`past-c-${i}`).value.trim()
+  });
  });
- if(!exercises.length){alert("Fyll i minst en övning först.");return}
+
+ if(!exercises.length){
+  alert("Fyll i minst en övning först.");
+  return;
+ }
+
  const [y,m,d]=dateValue.split("-");
- const iso=new Date(Number(y),Number(m)-1,Number(d),12,0,0).toISOString();
- const session={id:(crypto.randomUUID?crypto.randomUUID():String(Date.now())),date:iso,workout,sessionComment:document.getElementById("pastNote").value.trim(),exercises,enteredAfterward:true};
+ const iso=new Date(
+  Number(y),Number(m)-1,Number(d),12,0,0
+ ).toISOString();
+
+ const session={
+  id:crypto.randomUUID
+   ?crypto.randomUUID():String(Date.now()),
+  date:iso,
+  workout,
+  sessionComment:document.getElementById("pastNote").value.trim(),
+  exercises,
+  enteredAfterward:true
+ };
+
  state.history.push(session);
- state.history.sort((a,b)=>new Date(a.date)-new Date(b.date));
+ state.history.sort(
+  (a,b)=>new Date(a.date)-new Date(b.date)
+ );
+
  queueWorkout(session);
  await sendWorkoutToRemote(session);
- document.getElementById("pastWorkoutForm").classList.add("hidden");
+
+ document.getElementById("pastWorkoutForm")
+  .classList.add("hidden");
  document.getElementById("pastNote").value="";
- render();renderHistory();updateStats();
- setSyncStatus((state.pendingSync||[]).length?"Sparat lokalt – väntar på synkning":"Synkad ✓",!(state.pendingSync||[]).length);
- alert((state.pendingSync||[]).some(x=>x.id===session.id)?"Historiskt pass sparat lokalt – synkas när anslutningen är tillbaka.":"Historiskt pass sparat och synkat!");
+
+ render();
+ renderHistory();
+ updateStats();
+
+ setSyncStatus(
+  (state.pendingSync||[]).length
+   ?"Sparat lokalt – väntar på synkning"
+   :"Synkad ✓",
+  !(state.pendingSync||[]).length
+ );
+
+ alert(
+  (state.pendingSync||[]).some(x=>x.id===session.id)
+   ?"Historiskt pass sparat lokalt – synkas när anslutningen är tillbaka."
+   :"Historiskt pass sparat och synkat!"
+ );
 }
+
 function exportTrainingData(){
- const payload={schemaVersion:2,appVersion:APP_VERSION,exportedAt:new Date().toISOString(),nextWorkout:state.next,sessions:state.sessions,program:state.program,history:state.history};
- const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
- const url=URL.createObjectURL(blob),a=document.createElement("a");
- a.href=url;a.download="donext-training-data.json";a.click();URL.revokeObjectURL(url);
+ const payload={
+  schemaVersion:2,
+  appVersion:APP_VERSION,
+  exportedAt:new Date().toISOString(),
+  nextWorkout:state.next,
+  sessions:state.sessions,
+  program:state.program,
+  history:state.history
+ };
+
+ const blob=new Blob(
+  [JSON.stringify(payload,null,2)],
+  {type:"application/json"}
+ );
+
+ const url=URL.createObjectURL(blob);
+ const a=document.createElement("a");
+ a.href=url;
+ a.download="donext-training-data.json";
+ a.click();
+ URL.revokeObjectURL(url);
 }
+
 async function syncNow(){
  await pullRemote();
  renderHistory();
 }
 
 render();
-if("serviceWorker" in navigator)navigator.serviceWorker.register("./sw.js",{updateViaCache:"none"}).catch(()=>{});
-if(sessionToken())pullRemote();
-window.addEventListener("online",()=>{if(sessionToken())pullRemote()});
+
+if("serviceWorker" in navigator){
+ navigator.serviceWorker.register("./sw.js",{
+  updateViaCache:"none"
+ }).catch(()=>{});
+}
+
+if(sessionToken()){
+ refreshAccount().then(me=>{
+  if(me){
+   pullRemote();
+  }else if(!sessionToken()){
+   setSyncStatus("Inte ansluten");
+  }
+ });
+}else{
+ updateAccountUI(null);
+}
+
+window.addEventListener("online",()=>{
+ if(sessionToken()){
+  refreshAccount().then(me=>{
+   if(me)pullRemote();
+  });
+ }
+});
 </script>
 </body>
 </html>
