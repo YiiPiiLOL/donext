@@ -61,7 +61,7 @@ textarea{text-align:left;margin-top:9px;resize:vertical}
   <section id="today" class="view active">
     <div class="card hero">
       <div class="row between">
-        <div><h1>DAGENS PASS</h1><div class="date" id="date"></div></div>
+        <div><h1 id="workoutTitle">DAGENS PASS</h1><div class="date" id="date"></div></div>
         <span class="badge" id="count"></span>
       </div>
       <div class="progress-wrap"><div class="progress"><div class="bar" id="bar"></div></div><span class="percent" id="percent">0%</span></div>
@@ -762,6 +762,7 @@ function esc(v){
 }
 
 function render(){
+ document.getElementById("workoutTitle").textContent="DAGENS PASS "+current;
  document.getElementById("date").textContent=
   new Date().toLocaleDateString("sv-SE",{
    weekday:"long",
